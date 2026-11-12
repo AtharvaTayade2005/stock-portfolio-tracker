@@ -1,4 +1,5 @@
 import {
+  INITIAL_NEWS_FEED,
   SYMBOL_CATALOG,
   SYMBOL_MAP,
   registerDynamicSymbol,
@@ -8,6 +9,7 @@ import type {
   MarketSessionPhase,
   MarketSessionStatus,
   MarketTick,
+  NewsItem,
   OhlcvCandle,
   ReplaySpeed,
   SymbolMetadata,
@@ -701,5 +703,76 @@ export class MarketEngine {
     const state = this.states.get(symbol.toUpperCase());
     if (!state) return [];
     return state.candles;
+  }
+
+  public async getLiveMarketNews(): Promise<NewsItem[]> {
+    try {
+      const url =
+        'https://query1.finance.yahoo.com/v1/finance/search?q=NSE%20India%20Sensex%20Gold%20Reliance&quotesCount=0&newsCount=8';
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(3500),
+      });
+      if (!res.ok) return INITIAL_NEWS_FEED;
+
+      const json = (await res.json()) as {
+        news?: Array<{
+          uuid?: string;
+          title?: string;
+          publisher?: string;
+          providerPublishTime?: number;
+          relatedTickers?: string[];
+        }>;
+      };
+
+      const liveItems: NewsItem[] = [];
+      for (const n of json.news ?? []) {
+        if (!n.title) continue;
+        const lower = n.title.toLowerCase();
+        const isBearish =
+          lower.includes('fall') ||
+          lower.includes('drop') ||
+          lower.includes('slump') ||
+          lower.includes('loss') ||
+          lower.includes('decline') ||
+          lower.includes('cut');
+
+        let matchedSymbol = 'RELIANCE';
+        for (const meta of SYMBOL_CATALOG) {
+          if (
+            n.title.toUpperCase().includes(meta.symbol) ||
+            n.title.toLowerCase().includes(meta.name.split(' ')[0].toLowerCase())
+          ) {
+            matchedSymbol = meta.symbol;
+            break;
+          }
+        }
+        if (lower.includes('gold')) matchedSymbol = 'MCX GOLD 10G';
+        else if (lower.includes('silver')) matchedSymbol = 'SILVERBEES';
+        else if (lower.includes('sbi')) matchedSymbol = 'SBIN';
+        else if (lower.includes('hdfc')) matchedSymbol = 'HDFCBANK';
+
+        const minutesAgo = n.providerPublishTime
+          ? Math.max(1, Math.floor((Date.now() / 1000 - n.providerPublishTime) / 60))
+          : 15;
+
+        liveItems.push({
+          id: n.uuid || `live-news-${liveItems.length}`,
+          symbol: matchedSymbol,
+          headline: n.title,
+          summary: `Live market dispatch via ${
+            n.publisher || 'Indian Market Wire'
+          } impacting ${matchedSymbol} and related NSE/BSE sector peers.`,
+          source: n.publisher || 'Exchange Wire',
+          publishedAt: minutesAgo < 60 ? `${minutesAgo}m ago` : `${Math.floor(minutesAgo / 60)}h ago`,
+          sentiment: isBearish ? 'BEARISH' : 'BULLISH',
+          impactScore: 8,
+        });
+      }
+
+      return [...liveItems, ...INITIAL_NEWS_FEED].slice(0, 16);
+    } catch {
+      return INITIAL_NEWS_FEED;
+    }
   }
 }

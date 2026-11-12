@@ -11,6 +11,11 @@ import {
   computeWilderRSI,
 } from '../src/shared/indicators.js';
 import { MarketEngine } from '../src/server/marketEngine.js';
+import {
+  calculateIndianStatutoryCharges,
+  computeIndianCapitalGainsTax,
+  generateMarketDepthLadder,
+} from '../src/shared/indianTaxAndCharges.js';
 
 describe('Indian Stock Market Portfolio Tracker Core Engines (Phase 1 + Phase 2)', () => {
   it('starts portfolio with 0 pre-seeded holdings and 3 linked Indian bank accounts', () => {
@@ -183,5 +188,32 @@ describe('Indian Stock Market Portfolio Tracker Core Engines (Phase 1 + Phase 2)
     assert.equal(hit.length, 1);
     assert.equal(hit[0].id, created.id);
     assert.equal(hit[0].status, 'TRIGGERED');
+  });
+
+  it('calculates SEBI/STT/GST/CDSL statutory charges, STCG tax-loss harvesting, and MCX Gold/Silver commodities (Phase 3)', () => {
+    const engine = new MarketEngine();
+    const silverCandles = engine.getCandles('SILVERBEES');
+    const mcxGoldCandles = engine.getCandles('MCX GOLD 10G');
+    assert.ok(silverCandles.length >= 70);
+    assert.ok(mcxGoldCandles.length >= 70);
+
+    const sellCharges = calculateIndianStatutoryCharges(
+      'SELL',
+      'LARGE_CAP',
+      'NSE',
+      10,
+      1339.7
+    );
+    assert.equal(sellCharges.dpCharge, 15.93);
+    assert.ok(sellCharges.stt > 0);
+    assert.ok(sellCharges.totalCharges > 15.93);
+
+    const depth = generateMarketDepthLadder(undefined, 1339.7);
+    assert.equal(depth.bids.length, 5);
+    assert.equal(depth.asks.length, 5);
+
+    const tax = computeIndianCapitalGainsTax([], 50000);
+    assert.equal(tax.realizedStcgGross, 50000);
+    assert.equal(tax.estimatedStcgTax, 10400);
   });
 });

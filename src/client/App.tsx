@@ -48,6 +48,11 @@ import type {
   WsServerMessage,
 } from '../shared/types.js';
 import { computeAllIndicators } from '../shared/indicators.js';
+import {
+  calculateIndianStatutoryCharges,
+  computeIndianCapitalGainsTax,
+  generateMarketDepthLadder,
+} from '../shared/indianTaxAndCharges.js';
 import { CandlestickChart } from './components/CandlestickChart.js';
 
 type ActiveTab =
@@ -55,6 +60,8 @@ type ActiveTab =
   | 'HOLDINGS_AND_LOTS'
   | 'BANK_AND_FUNDS'
   | 'BROKER_IMPORT'
+  | 'TAX_AND_CONTRACT_NOTE'
+  | 'MARKET_NEWS'
   | 'AI_COPILOT'
   | 'ALERTS_AND_ORDERS';
 
@@ -818,6 +825,30 @@ export const App: React.FC = () => {
     return livePortfolio.bankAccounts.reduce((acc, b) => acc + b.balance, 0);
   }, [livePortfolio]);
 
+  const statutoryBreakdown = useMemo(() => {
+    const qty = Number(orderQty);
+    const execPrice =
+      orderSide === 'BUY'
+        ? activeTick?.ask ?? activeMeta?.basePrice ?? 0
+        : activeTick?.bid ?? activeMeta?.basePrice ?? 0;
+    return calculateIndianStatutoryCharges(
+      orderSide,
+      activeMeta?.segment ?? 'LARGE_CAP',
+      activeMeta?.exchange ?? 'NSE',
+      Number.isFinite(qty) && qty > 0 ? qty : 0,
+      execPrice
+    );
+  }, [orderSide, orderQty, activeTick, activeMeta]);
+
+  const taxReport = useMemo(() => {
+    if (!livePortfolio) return null;
+    return computeIndianCapitalGainsTax(livePortfolio.holdings, livePortfolio.totalRealizedPnl);
+  }, [livePortfolio]);
+
+  const marketDepth = useMemo(() => {
+    return generateMarketDepthLadder(activeTick, activeMeta?.basePrice ?? 1000);
+  }, [activeTick, activeMeta]);
+
   return (
     <div className="min-h-screen bg-[#F4F6F8] text-[#0F172A] flex flex-col selection:bg-emerald-600 selection:text-white">
       {/* ================= TOP DALAL STREET BULL / BEAR COMMAND BAR ================= */}
@@ -931,23 +962,23 @@ export const App: React.FC = () => {
             </button>
 
             {/* Replay Override Pill (0 = Exact Real Closing/Live Prices, 1x/5x/10x = Interview Sim) */}
-            <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 px-1.5">
-                Feed:
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1">
+              <span className="text-xs font-medium text-slate-300">
+                Market Mode:
               </span>
               {([0, 1, 5, 10] as ReplaySpeed[]).map((spd) => (
                 <button
                   key={spd}
                   onClick={() => handleReplaySpeedChange(spd)}
-                  className={`px-2 py-0.5 text-[11px] font-mono rounded transition cursor-pointer ${
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-md transition cursor-pointer ${
                     replaySpeed === spd
                       ? spd === 0
-                        ? 'bg-[#00B386] text-white font-bold'
-                        : 'bg-amber-500 text-slate-950 font-bold'
-                      : 'text-slate-400 hover:text-white'
+                        ? 'bg-[#00B386] text-white'
+                        : 'bg-amber-500 text-slate-950'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800'
                   }`}
                 >
-                  {spd === 0 ? 'REAL (3:30 IST)' : `SIM ${spd}x`}
+                  {spd === 0 ? 'Live (9:15–3:30)' : `Replay ${spd}x`}
                 </button>
               ))}
             </div>
@@ -1067,6 +1098,7 @@ export const App: React.FC = () => {
               {(
                 [
                   ['ALL', 'All'],
+                  ['COMMODITY', 'Gold, Silver & Commodities'],
                   ['LARGE_CAP', 'Large Cap'],
                   ['MID_CAP', 'Mid Cap'],
                   ['SMALL_CAP', 'Small Cap'],
@@ -1186,6 +1218,8 @@ export const App: React.FC = () => {
                 ],
                 ['BANK_AND_FUNDS', '3-in-1 Bank & Demat Funds', Landmark],
                 ['BROKER_IMPORT', 'Import External Broker', FolderInput],
+                ['TAX_AND_CONTRACT_NOTE', 'SEBI Contract Note & Tax', ShieldAlert],
+                ['MARKET_NEWS', `Stock & Commodity News (${news.length})`, Flame],
                 ['AI_COPILOT', 'Gemini 3.8 Flash Risk Copilot', Sparkles],
                 ['ALERTS_AND_ORDERS', `Order Book & Alerts (${alerts.length})`, Bell],
               ] as Array<[ActiveTab, string, React.ComponentType<{ className?: string }>]>
@@ -1911,6 +1945,219 @@ export const App: React.FC = () => {
               </div>
             )}
 
+            {/* ================= TAB 4B: SEBI CONTRACT NOTE & STCG/LTCG TAX ENGINE (PHASE 3) ================= */}
+            {activeTab === 'TAX_AND_CONTRACT_NOTE' && taxReport && livePortfolio && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 font-mono">
+                  <div className="bg-white rounded-xl border border-slate-200 p-3.5">
+                    <div className="text-[10px] uppercase text-slate-500">Realized STCG Gains</div>
+                    <div className="text-base font-extrabold text-[#059669] mt-1">
+                      {formatINR(taxReport.realizedStcgGross)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">Sec 111A (20% + 4% Cess)</div>
+                  </div>
+                  <div className="bg-white rounded-xl border border-rose-200 p-3.5">
+                    <div className="text-[10px] uppercase text-rose-700">Est. STCG Tax Liability</div>
+                    <div className="text-base font-extrabold text-[#E11D48] mt-1">
+                      {formatINR(taxReport.estimatedStcgTax)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">Effective Rate: 20.8%</div>
+                  </div>
+                  <div className="bg-emerald-50/70 rounded-xl border border-emerald-300 p-3.5">
+                    <div className="text-[10px] uppercase text-emerald-800">
+                      Harvestable Tax Savings
+                    </div>
+                    <div className="text-base font-extrabold text-[#059669] mt-1">
+                      {formatINR(taxReport.potentialTaxSavingsViaHarvesting)}
+                    </div>
+                    <div className="text-[10px] text-emerald-700 mt-0.5">
+                      Via FIFO Loss Offset
+                    </div>
+                  </div>
+                  <div className="bg-amber-50/70 rounded-xl border border-amber-300 p-3.5">
+                    <div className="text-[10px] uppercase text-amber-900">
+                      Sec 112A LTCG Exemption
+                    </div>
+                    <div className="text-base font-extrabold text-amber-950 mt-1">
+                      {formatINR(taxReport.ltcgExemptionLimit)}
+                    </div>
+                    <div className="text-[10px] text-amber-800 mt-0.5">
+                      12.5% above ₹1.25 Lakh
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tax-Loss Harvesting Candidates */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2.5">
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Automated FIFO Tax-Loss Harvesting Advisor (FY 2026-27)
+                  </h3>
+                  {taxReport.harvestCandidates.length === 0 ? (
+                    <p className="text-xs text-slate-600">
+                      Zero positions currently in unrealized loss — all active holdings are in
+                      positive territory or portfolio is empty.
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-slate-100 text-xs font-mono">
+                      {taxReport.harvestCandidates.map((cand) => (
+                        <div
+                          key={cand.symbol}
+                          className="py-2 flex items-center justify-between gap-2"
+                        >
+                          <div>
+                            <span className="font-bold text-slate-900">{cand.symbol}</span>{' '}
+                            <span className="text-slate-500">
+                              ({cand.quantity} units @ avg {formatINR(cand.avgCostBasis)})
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[#E11D48] font-bold mr-3">
+                              Loss: -{formatINR(cand.unrealizedLoss)}
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-emerald-100 text-[#059669] font-bold">
+                              Saves {formatINR(cand.potentialStcgTaxSaved)} STCG Tax
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* SEBI Statutory Contract Note Ledger */}
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="px-4 py-2.5 bg-slate-900 text-white text-xs font-bold flex items-center justify-between">
+                    <span>SEBI-Compliant Electronic Contract Note & Statutory Ledger</span>
+                    <span className="text-[10px] font-mono text-[#00D09C]">
+                      STT • NSE/BSE/MCX Turnover • SEBI • Stamp Duty • 18% GST • CDSL DP
+                    </span>
+                  </div>
+                  <div className="p-4 text-xs font-mono space-y-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                      <div>
+                        <div className="text-[10px] text-slate-500">Selected Trade</div>
+                        <div className="font-bold text-slate-900">
+                          {orderSide} {orderQty} {selectedSymbol}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-500">STT / CTT</div>
+                        <div className="font-bold text-slate-900">
+                          {formatINR(statutoryBreakdown.stt)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-500">
+                          Stamp Duty + DP Charge
+                        </div>
+                        <div className="font-bold text-slate-900">
+                          {formatINR(
+                            statutoryBreakdown.stampDuty + statutoryBreakdown.dpCharge
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-500">
+                          Total Statutory Charges
+                        </div>
+                        <div className="font-bold text-[#E11D48]">
+                          {formatINR(statutoryBreakdown.totalCharges)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ================= TAB 4C: LIVE INDIAN STOCK MARKET & COMMODITY NEWS ================= */}
+            {activeTab === 'MARKET_NEWS' && (
+              <div className="space-y-4">
+                <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Live Indian Stock Market, NSE/BSE & MCX Gold/Silver News Wire
+                    </h3>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Real-time Bullish & Bearish catalyst feed across Equities, F&O, Gold, Silver, and Mutual Funds
+                    </p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const res = await fetch('/api/news');
+                      if (res.ok) {
+                        const data = (await res.json()) as { news: NewsItem[] };
+                        setNews(data.news);
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#059669] text-white hover:bg-emerald-600 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Refresh Live News
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {news.map((item) => {
+                    const isBull = item.sentiment === 'BULLISH';
+                    return (
+                      <div
+                        key={item.id}
+                        className={`bg-white rounded-xl border border-slate-200 border-l-4 p-4 shadow-2xs flex flex-col justify-between gap-3 ${
+                          isBull ? 'border-l-[#059669]' : 'border-l-[#E11D48]'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded bg-slate-900 text-white text-xs font-bold">
+                                {item.symbol}
+                              </span>
+                              <span className="text-xs text-slate-500 font-medium">
+                                {item.source} • {item.publishedAt}
+                              </span>
+                            </div>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                                isBull
+                                  ? 'bg-emerald-100 text-[#059669]'
+                                  : 'bg-rose-100 text-[#E11D48]'
+                              }`}
+                            >
+                              {isBull ? 'Bullish Catalyst' : 'Bearish Catalyst'}
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-bold text-slate-900 mt-2 leading-snug">
+                            {item.headline}
+                          </h4>
+                          <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
+                            {item.summary}
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                          <span className="text-xs text-slate-500">
+                            Impact Score: <strong>{item.impactScore}/10</strong>
+                          </span>
+                          <button
+                            onClick={() => {
+                              setSelectedSymbol(item.symbol);
+                              setActiveTab('TERMINAL');
+                            }}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold text-white cursor-pointer ${
+                              isBull
+                                ? 'bg-[#059669] hover:bg-emerald-600'
+                                : 'bg-[#E11D48] hover:bg-rose-600'
+                            }`}
+                          >
+                            Inspect & Trade {item.symbol} →
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* ================= TAB 5: GEMINI 3.8 FLASH RISK COPILOT ================= */}
             {activeTab === 'AI_COPILOT' && (
               <div className="space-y-4">
@@ -2215,12 +2462,26 @@ export const App: React.FC = () => {
 
               <div className="p-2.5 rounded-lg bg-slate-900 text-white font-mono text-xs space-y-1">
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Est. Order Value:</span>
+                  <span className="text-slate-400">Order Turnover:</span>
                   <span className="font-bold text-white">
                     {formatINR(estimatedOrderNotional)}
                   </span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-slate-400">
+                    SEBI/STT/GST/DP Charges:
+                  </span>
+                  <span className="text-rose-400 font-semibold">
+                    +{formatINR(statutoryBreakdown.totalCharges)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-[11px] border-t border-slate-800 pt-1">
+                  <span className="text-slate-300">Net Settlement:</span>
+                  <span className="text-[#00D09C] font-bold">
+                    {formatINR(statutoryBreakdown.netSettlementAmount)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-[11px]">
                   <span className="text-slate-400">Demat Cash Margin:</span>
                   <span className="text-amber-400 font-bold">
                     {formatINR(livePortfolio?.cashBalance ?? 0)}
@@ -2261,6 +2522,65 @@ export const App: React.FC = () => {
                 </div>
               )}
             </form>
+          </div>
+
+          {/* 5-Level NSE / BSE / MCX Live Market Depth Order Book Ladder */}
+          <div className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-2.5 shadow-2xs">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+              <span>5-Level Market Depth ({selectedSymbol})</span>
+              <span className="text-[10px] font-mono text-slate-500">L2 ORDER BOOK</span>
+            </div>
+
+            {/* Buy vs Sell Order Book Pressure Bar */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] font-mono font-bold">
+                <span className="text-[#059669]">
+                  BIDS: {marketDepth.buyPressurePercent}% ({marketDepth.totalBidQty})
+                </span>
+                <span className="text-[#E11D48]">
+                  ASKS: {marketDepth.sellPressurePercent}% ({marketDepth.totalAskQty})
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-[#E11D48] overflow-hidden flex">
+                <div
+                  className="h-full bg-[#059669] transition-all duration-300"
+                  style={{ width: `${marketDepth.buyPressurePercent}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+              <div>
+                <div className="flex justify-between text-slate-400 pb-1 border-b border-slate-100">
+                  <span>BID (₹)</span>
+                  <span>QTY</span>
+                </div>
+                {marketDepth.bids.map((b, i) => (
+                  <div
+                    key={i}
+                    className="flex justify-between py-0.5 text-[#059669] font-semibold"
+                  >
+                    <span>{b.price.toFixed(2)}</span>
+                    <span>{b.quantity}</span>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <div className="flex justify-between text-slate-400 pb-1 border-b border-slate-100">
+                  <span>ASK (₹)</span>
+                  <span>QTY</span>
+                </div>
+                {marketDepth.asks.map((a, i) => (
+                  <div
+                    key={i}
+                    className="flex justify-between py-0.5 text-[#E11D48] font-semibold"
+                  >
+                    <span>{a.price.toFixed(2)}</span>
+                    <span>{a.quantity}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Live Market Pulse & News Feed */}

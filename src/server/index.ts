@@ -236,7 +236,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && pathname === '/api/news') {
-      sendJson(res, 200, { news: INITIAL_NEWS_FEED });
+      const liveNews = await marketEngine.getLiveMarketNews();
+      sendJson(res, 200, { news: liveNews });
       return;
     }
 

@@ -1,9 +1,10 @@
-export type MarketExchange = 'NSE' | 'BSE' | 'NFO' | 'AMFI';
+export type MarketExchange = 'NSE' | 'BSE' | 'NFO' | 'MCX' | 'AMFI';
 
 export type InstrumentSegment =
   | 'LARGE_CAP'
   | 'MID_CAP'
   | 'SMALL_CAP'
+  | 'COMMODITY'
   | 'FNO'
   | 'ETF'
   | 'MUTUAL_FUND';
@@ -55,7 +56,8 @@ export interface SymbolMetadata {
     | 'Capital Markets'
     | 'Index Derivatives'
     | 'Passive ETF'
-    | 'Equity Mutual Fund';
+    | 'Equity Mutual Fund'
+    | 'Gold, Silver & Commodities';
   currency: 'INR';
   basePrice: number; // Real 3:30 PM closing price in ₹ (INR)
   prevClose: number; // Real previous session closing price in ₹ (INR)
