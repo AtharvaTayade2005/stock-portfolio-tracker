@@ -1,0 +1,285 @@
+import { GoogleGenAI } from '@google/genai';
+import { formatINR } from '../shared/catalog.js';
+import type { AiCopilotAnalysis, NewsItem, PortfolioSnapshot } from '../shared/types.js';
+
+export class AiCopilotService {
+  private readonly apiKey: string | undefined;
+
+  constructor(apiKey?: string) {
+    this.apiKey =
+      apiKey?.trim() || process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim();
+  }
+
+  public async analyzePortfolio(
+    portfolio: PortfolioSnapshot,
+    newsFeed: NewsItem[],
+    customQuestion?: string
+  ): Promise<AiCopilotAnalysis> {
+    const deterministicBaseline = this.computeDeterministicAnalysis(
+      portfolio,
+      newsFeed,
+      customQuestion
+    );
+
+    if (!this.apiKey) {
+      return deterministicBaseline;
+    }
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: this.apiKey });
+
+      const promptPayload = {
+        currency: 'INR (₹)',
+        portfolioSummary: {
+          totalEquity: portfolio.totalEquity,
+          cashBalance: portfolio.cashBalance,
+          holdingsMarketValue: portfolio.holdingsMarketValue,
+          totalUnrealizedPnl: portfolio.totalUnrealizedPnl,
+          totalRealizedPnl: portfolio.totalRealizedPnl,
+          portfolioBeta: portfolio.portfolioBeta,
+          sectorAllocations: portfolio.sectorAllocations,
+          segmentAllocations: portfolio.segmentAllocations,
+          holdings: portfolio.holdings.map((h) => ({
+            symbol: h.symbol,
+            segment: h.segment,
+            sector: h.sector,
+            exchange: h.exchange,
+            weightPercent: h.weightPercent,
+            beta: h.beta,
+            marketValue: h.marketValue,
+            unrealizedPnl: h.unrealizedPnl,
+            unrealizedPnlPercent: h.unrealizedPnlPercent,
+          })),
+        },
+        liveNews: newsFeed.slice(0, 6),
+        deterministicStressBaseline: deterministicBaseline.stressTestScenarios,
+        userQuestion:
+          customQuestion ||
+          'Provide a full Indian stock market portfolio risk and news impact audit in INR (₹).',
+      };
+
+      const response = await ai.interactions.create({
+        model: 'gemini-3.8-flash',
+        system_instruction:
+          'You are an institutional Indian market quantitative risk manager (NSE/BSE/NFO/AMFI). Format all monetary amounts in Indian Rupees (₹). Ground every number strictly in the provided deterministic ledger snapshot and beta math. Return concise JSON.',
+        input: JSON.stringify(promptPayload),
+        response_format: {
+          type: 'object',
+          properties: {
+            riskScore: { type: 'number', description: 'Portfolio risk score from 1 to 100' },
+            riskLabel: {
+              type: 'string',
+              enum: ['CONSERVATIVE', 'MODERATE', 'AGGRESSIVE', 'CONCENTRATED_HIGH_BETA'],
+            },
+            executiveSummary: { type: 'string' },
+            concentrationFindings: {
+              type: 'array',
+              items: { type: 'string' },
+            },
+            actionableRebalancing: {
+              type: 'array',
+              items: { type: 'string' },
+            },
+            queryAnswer: { type: 'string' },
+          },
+          required: [
+            'riskScore',
+            'riskLabel',
+            'executiveSummary',
+            'concentrationFindings',
+            'actionableRebalancing',
+            'queryAnswer',
+          ],
+        },
+      });
+
+      const rawText = response.output_text;
+      if (!rawText) {
+        return deterministicBaseline;
+      }
+
+      const parsed = JSON.parse(rawText) as Partial<AiCopilotAnalysis>;
+      return {
+        ...deterministicBaseline,
+        engineMode: 'GEMINI_LIVE',
+        modelUsed: 'gemini-3.8-flash',
+        generatedAt: new Date().toISOString(),
+        riskScore:
+          typeof parsed.riskScore === 'number'
+            ? Math.min(100, Math.max(1, Math.round(parsed.riskScore)))
+            : deterministicBaseline.riskScore,
+        riskLabel: parsed.riskLabel ?? deterministicBaseline.riskLabel,
+        executiveSummary: parsed.executiveSummary || deterministicBaseline.executiveSummary,
+        concentrationFindings:
+          Array.isArray(parsed.concentrationFindings) && parsed.concentrationFindings.length > 0
+            ? parsed.concentrationFindings
+            : deterministicBaseline.concentrationFindings,
+        actionableRebalancing:
+          Array.isArray(parsed.actionableRebalancing) && parsed.actionableRebalancing.length > 0
+            ? parsed.actionableRebalancing
+            : deterministicBaseline.actionableRebalancing,
+        queryAnswer: parsed.queryAnswer || deterministicBaseline.queryAnswer,
+      };
+    } catch {
+      return deterministicBaseline;
+    }
+  }
+
+  public computeDeterministicAnalysis(
+    portfolio: PortfolioSnapshot,
+    newsFeed: NewsItem[],
+    customQuestion?: string
+  ): AiCopilotAnalysis {
+    const topHolding = portfolio.holdings[0];
+    const topSector = portfolio.sectorAllocations[0];
+    const investedRatio =
+      portfolio.totalEquity > 0 ? portfolio.holdingsMarketValue / portfolio.totalEquity : 0;
+
+    const rawRisk =
+      portfolio.portfolioBeta * 38 +
+      (topSector ? topSector.weightPercent * 0.42 : 0) +
+      investedRatio * 20;
+    const riskScore = Math.min(98, Math.max(12, Math.round(rawRisk)));
+
+    let riskLabel: AiCopilotAnalysis['riskLabel'] = 'MODERATE';
+    if (riskScore >= 75) riskLabel = 'CONCENTRATED_HIGH_BETA';
+    else if (riskScore >= 58) riskLabel = 'AGGRESSIVE';
+    else if (riskScore <= 35) riskLabel = 'CONSERVATIVE';
+
+    // Scenario 1: Nifty IT & Mid/Small-Cap -5% Correction
+    const itAndMidHoldings = portfolio.holdings.filter(
+      (h) =>
+        h.sector === 'IT Services' ||
+        h.segment === 'MID_CAP' ||
+        h.segment === 'SMALL_CAP'
+    );
+    const itShockImpact = itAndMidHoldings.reduce(
+      (sum, h) => sum + h.marketValue * (-0.05 * h.beta),
+      0
+    );
+
+    // Scenario 2: Nifty 50 / Sensex -3% Broad Drawdown (including F&O delta/beta)
+    const broadShockImpact = portfolio.holdings.reduce(
+      (sum, h) => sum + h.marketValue * (-0.03 * h.beta),
+      0
+    );
+
+    // Scenario 3: RBI Repo Rate Hold / Banking NIM +2.5% Rally vs High-Beta -3%
+    const rbiShockImpact = portfolio.holdings.reduce((sum, h) => {
+      if (h.sector === 'Banking & Finance') return sum + h.marketValue * 0.025;
+      return sum + h.marketValue * (-0.03 * h.beta);
+    }, 0);
+
+    const stressTestScenarios = [
+      {
+        scenarioName: 'Nifty IT & Mid/Small-Cap -5% Pullback',
+        estimatedPnlImpact: Number(itShockImpact.toFixed(2)),
+        estimatedPnlPercent:
+          portfolio.holdingsMarketValue > 0
+            ? Number(((itShockImpact / portfolio.holdingsMarketValue) * 100).toFixed(2))
+            : 0,
+        mostVulnerableSymbol: itAndMidHoldings[0]?.symbol ?? 'DIXON',
+        explanation:
+          'Applies a -5.0% shock scaled by each holding’s beta across NSE IT Services, Mid-Cap, and Small-Cap positions.',
+      },
+      {
+        scenarioName: 'Nifty 50 & Sensex -3% Broad Index Correction',
+        estimatedPnlImpact: Number(broadShockImpact.toFixed(2)),
+        estimatedPnlPercent:
+          portfolio.holdingsMarketValue > 0
+            ? Number(((broadShockImpact / portfolio.holdingsMarketValue) * 100).toFixed(2))
+            : 0,
+        mostVulnerableSymbol: topHolding?.symbol ?? 'RELIANCE',
+        explanation: `With a portfolio beta of ${portfolio.portfolioBeta.toFixed(2)}x (including NFO Put hedge), a 3% benchmark drop impacts deployed holdings by ${formatINR(broadShockImpact)}.`,
+      },
+      {
+        scenarioName: 'RBI Liquidity Tightening (Banks +2.5%, Growth -3%)',
+        estimatedPnlImpact: Number(rbiShockImpact.toFixed(2)),
+        estimatedPnlPercent:
+          portfolio.holdingsMarketValue > 0
+            ? Number(((rbiShockImpact / portfolio.holdingsMarketValue) * 100).toFixed(2))
+            : 0,
+        mostVulnerableSymbol: 'DIXON',
+        explanation:
+          'PSU & Private Banks (HDFCBANK, SBIN, ICICIBANK) gain +2.5% while high-beta mid/small caps compress by 3% * beta.',
+      },
+    ];
+
+    const holdingMap = new Map(portfolio.holdings.map((h) => [h.symbol, h]));
+    const newsCorrelations = newsFeed.slice(0, 4).map((item) => {
+      const held = holdingMap.get(item.symbol);
+      const weight = held ? held.weightPercent : 0;
+      return {
+        symbol: item.symbol,
+        sentiment: item.sentiment,
+        portfolioWeightPercent: weight,
+        thesis:
+          weight > 0
+            ? `${item.symbol} accounts for ${weight.toFixed(1)}% of invested capital (${formatINR(held!.marketValue)}). ${item.headline}`
+            : `${item.symbol} is on watchlist (0% weight). ${item.headline}`,
+      };
+    });
+
+    const concentrationFindings: string[] = [];
+    if (topSector) {
+      concentrationFindings.push(
+        `${topSector.sector} represents ${topSector.weightPercent.toFixed(1)}% (${formatINR(topSector.marketValue)}) of deployed capital.`
+      );
+    }
+    if (topHolding) {
+      concentrationFindings.push(
+        `Largest position is ${topHolding.symbol} (${topHolding.exchange}) at ${topHolding.weightPercent.toFixed(1)}% weight (FIFO Avg Cost ${formatINR(topHolding.avgCostBasis)}).`
+      );
+    }
+    concentrationFindings.push(
+      `Available margin stands at ${formatINR(portfolio.cashBalance)} (${(
+        (portfolio.cashBalance / Math.max(1, portfolio.totalEquity)) *
+        100
+      ).toFixed(1)}% of total net worth).`
+    );
+
+    const actionableRebalancing: string[] = [
+      topHolding && topHolding.weightPercent > 25
+        ? `Book partial profits in ${topHolding.symbol} via FIFO tax-lot realization to lock in ${formatINR(topHolding.unrealizedPnl)} unrealized gains.`
+        : 'Single-stock concentration is balanced across Large Cap, Mid/Small Cap, ETFs, and Mutual Funds.',
+      portfolio.portfolioBeta > 1.15
+        ? `Increase allocation to NIFTYBEES / GOLDBEES or PPFAS-FLEXI Direct Mutual Fund to cushion mid-cap and F&O volatility.`
+        : `Portfolio beta (${portfolio.portfolioBeta.toFixed(2)}x) is well-hedged against Nifty 50 swings.`,
+    ];
+
+    let queryAnswer = `Grounded in your NSE/BSE/NFO/MF FIFO ledger: Total Net Worth is ${formatINR(portfolio.totalEquity)} (${formatINR(portfolio.holdingsMarketValue)} invested across ${portfolio.holdings.length} positions + ${formatINR(portfolio.cashBalance)} free margin). A 5% pullback in IT & Mid/Small-Caps impacts P&L by ${formatINR(itShockImpact)}.`;
+
+    if (customQuestion && customQuestion.trim().length > 0) {
+      const q = customQuestion.toLowerCase();
+      const pctMatch = q.match(/(\d+(?:\.\d+)?)\s*%/);
+      const customShockPct = pctMatch ? Number(pctMatch[1]) / 100 : 0.05;
+
+      if (q.includes('nifty') || q.includes('drop') || q.includes('fall') || q.includes('crash')) {
+        const customImpact = portfolio.holdings.reduce(
+          (sum, h) => sum - h.marketValue * customShockPct * h.beta,
+          0
+        );
+        queryAnswer = `Stress Test for "${customQuestion}": A ${(customShockPct * 100).toFixed(1)}% drop in Nifty 50 / Sensex (beta-adjusted across your Large-Cap, Mid/Small-Cap, F&O, ETF, and Mutual Fund holdings) shifts portfolio value by ${formatINR(customImpact)} (${((customImpact / Math.max(1, portfolio.totalEquity)) * 100).toFixed(2)}% of net worth).`;
+      } else if (q.includes('fno') || q.includes('option') || q.includes('derivative')) {
+        const fnoHoldings = portfolio.holdings.filter((h) => h.segment === 'FNO');
+        const fnoValue = fnoHoldings.reduce((s, h) => s + h.marketValue, 0);
+        const fnoPnl = fnoHoldings.reduce((s, h) => s + h.unrealizedPnl, 0);
+        queryAnswer = `Your NFO Derivatives exposure (${fnoHoldings.map((h) => h.symbol).join(', ')}) has a current value of ${formatINR(fnoValue)} with ${formatINR(fnoPnl)} MTM P&L. Note that NIFTY 24000 PE (β = -2.1) acts as a downside delta hedge when Nifty falls.`;
+      }
+    }
+
+    return {
+      engineMode: 'DETERMINISTIC_QUANT_FALLBACK',
+      modelUsed: 'Indian Market Beta & FIFO Quant Engine',
+      generatedAt: new Date().toISOString(),
+      riskScore,
+      riskLabel,
+      executiveSummary: `Portfolio holds ${portfolio.holdings.length} active NSE/BSE/NFO/AMFI positions valued at ${formatINR(portfolio.holdingsMarketValue)} with a weighted beta of ${portfolio.portfolioBeta.toFixed(2)}x and ${formatINR(portfolio.totalUnrealizedPnl)} (${portfolio.totalUnrealizedPnlPercent.toFixed(2)}%) in unrealized P&L.`,
+      concentrationFindings,
+      newsCorrelations,
+      stressTestScenarios,
+      actionableRebalancing,
+      queryAnswer,
+    };
+  }
+}
