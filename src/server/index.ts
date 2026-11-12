@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { INITIAL_NEWS_FEED, SYMBOL_CATALOG, SYMBOL_MAP } from '../shared/catalog.js';
 import type {
   AlertDirection,
+  ExternalHoldingImportItem,
   OrderRequest,
   ReplaySpeed,
   WsServerMessage,
@@ -41,7 +42,7 @@ async function readJsonBody<T>(req: http.IncomingMessage): Promise<T> {
       try {
         const raw = Buffer.concat(chunks).toString('utf-8');
         resolve(raw ? (JSON.parse(raw) as T) : ({} as T));
-      } catch (err) {
+      } catch {
         reject(new Error('Malformed JSON request body.'));
       }
     });
@@ -74,6 +75,7 @@ const server = http.createServer(async (req, res) => {
         status: 'ok',
         feedMode: marketEngine.getFeedMode(),
         replaySpeed: marketEngine.getReplaySpeed(),
+        session: marketEngine.getSessionStatus(),
         connectedClients: wss.clients.size,
         timestamp: new Date().toISOString(),
       });
@@ -84,14 +86,39 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, {
         symbols: SYMBOL_CATALOG,
         ticks: marketEngine.getAllLatestTicks(),
+        indices: marketEngine.getIndices(),
+        session: marketEngine.getSessionStatus(),
         replaySpeed: marketEngine.getReplaySpeed(),
         feedMode: marketEngine.getFeedMode(),
       });
       return;
     }
 
+    if (req.method === 'GET' && pathname === '/api/market/search') {
+      const q = parsedUrl.searchParams.get('q') || '';
+      const matchedSymbols = await marketEngine.searchAndRegisterSymbols(q);
+      sendJson(res, 200, {
+        symbols: matchedSymbols,
+        allSymbols: SYMBOL_CATALOG,
+        ticks: marketEngine.getAllLatestTicks(),
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/market/sync') {
+      const ticks = await marketEngine.syncLiveMarketData();
+      const snapshot = ledgerService.getPortfolioSnapshot(marketEngine.getLatestTicksMap());
+      sendJson(res, 200, {
+        ticks,
+        indices: marketEngine.getIndices(),
+        session: marketEngine.getSessionStatus(),
+        portfolio: snapshot,
+      });
+      return;
+    }
+
     if (req.method === 'GET' && pathname === '/api/candles') {
-      const symbol = parsedUrl.searchParams.get('symbol') || 'RELIANCE';
+      const symbol = (parsedUrl.searchParams.get('symbol') || 'RELIANCE').toUpperCase();
       if (!SYMBOL_MAP.has(symbol)) {
         sendJson(res, 404, { error: `Symbol ${symbol} not found` });
         return;
@@ -111,7 +138,12 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && pathname === '/api/orders') {
       const body = await readJsonBody<OrderRequest>(req);
-      const tick = marketEngine.getLatestTicksMap().get(body.symbol);
+      let tick = marketEngine.getLatestTicksMap().get(body.symbol);
+      if (!tick) {
+        // Attempt dynamic registration if it's a newly searched NSE/BSE stock
+        await marketEngine.searchAndRegisterSymbols(body.symbol);
+        tick = marketEngine.getLatestTicksMap().get(body.symbol);
+      }
       if (!tick) {
         sendJson(res, 400, { error: `No live quote available for symbol ${body.symbol}` });
         return;
@@ -126,6 +158,56 @@ const server = http.createServer(async (req, res) => {
         deduplicated: result.deduplicated,
         portfolio: snapshot,
       });
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/banks') {
+      const body = await readJsonBody<{
+        bankName: string;
+        accountNumberMasked: string;
+        ifscCode: string;
+        upiId: string;
+        initialBalance: number;
+        isPrimaryThreeInOne?: boolean;
+      }>(req);
+      const bank = ledgerService.linkBankAccount(body);
+      const snapshot = ledgerService.getPortfolioSnapshot(marketEngine.getLatestTicksMap());
+      sendJson(res, 201, { bank, portfolio: snapshot });
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/banks/transfer') {
+      const body = await readJsonBody<{
+        bankAccountId: number;
+        direction: 'DEPOSIT_TO_DEMAT' | 'WITHDRAW_TO_BANK';
+        method: 'UPI' | 'NETBANKING' | 'IMPS' | 'ASBA_3IN1';
+        amount: number;
+        referenceNote?: string;
+      }>(req);
+      const transaction = ledgerService.transferBankFunds(body);
+      const snapshot = ledgerService.getPortfolioSnapshot(marketEngine.getLatestTicksMap());
+      sendJson(res, 200, { transaction, portfolio: snapshot });
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/portfolio/import') {
+      const body = await readJsonBody<{ items: ExternalHoldingImportItem[] }>(req);
+      // Ensure any imported symbols not yet in catalog are registered
+      for (const item of body.items ?? []) {
+        if (item.symbol && !SYMBOL_MAP.has(item.symbol.toUpperCase())) {
+          await marketEngine.searchAndRegisterSymbols(item.symbol);
+        }
+      }
+      const { importedCount } = ledgerService.importExternalHoldings(body.items || []);
+      const snapshot = ledgerService.getPortfolioSnapshot(marketEngine.getLatestTicksMap());
+      sendJson(res, 200, { importedCount, portfolio: snapshot });
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/portfolio/reset') {
+      ledgerService.resetPortfolioHoldings();
+      const snapshot = ledgerService.getPortfolioSnapshot(marketEngine.getLatestTicksMap());
+      sendJson(res, 200, { portfolio: snapshot });
       return;
     }
 
@@ -174,8 +256,14 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const speed = marketEngine.setReplaySpeed(body.speed);
-      broadcastWs({ type: 'REPLAY_SPEED_CHANGED', replaySpeed: speed });
-      sendJson(res, 200, { replaySpeed: speed });
+      const session = marketEngine.getSessionStatus();
+      broadcastWs({ type: 'REPLAY_SPEED_CHANGED', replaySpeed: speed, session });
+      sendJson(res, 200, {
+        replaySpeed: speed,
+        session,
+        ticks: marketEngine.getAllLatestTicks(),
+        portfolio: ledgerService.getPortfolioSnapshot(marketEngine.getLatestTicksMap()),
+      });
       return;
     }
 
@@ -201,8 +289,9 @@ wss.on('connection', (socket) => {
   const initialMsg: WsServerMessage = {
     type: 'INITIAL_STATE',
     ticks: marketEngine.getAllLatestTicks(),
+    indices: marketEngine.getIndices(),
+    session: marketEngine.getSessionStatus(),
     replaySpeed: marketEngine.getReplaySpeed(),
-    feedMode: marketEngine.getFeedMode(),
   };
   socket.send(JSON.stringify(initialMsg));
 });
@@ -211,6 +300,8 @@ marketEngine.onTickBatch((ticks, updatedCandles) => {
   broadcastWs({
     type: 'TICK_BATCH',
     ticks,
+    indices: marketEngine.getIndices(),
+    session: marketEngine.getSessionStatus(),
     updatedCandles,
   });
 
@@ -229,5 +320,5 @@ marketEngine.onTickBatch((ticks, updatedCandles) => {
 marketEngine.start();
 
 server.listen(PORT, () => {
-  console.log(`[KINETIC SERVER] HTTP & WebSocket Fan-Out listening on http://localhost:${PORT}`);
+  console.log(`[KITEPULSE SERVER] Indian Market HTTP & WS listening on http://localhost:${PORT}`);
 });
