@@ -116,7 +116,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     ctx.strokeStyle = '#162032';
     ctx.lineWidth = 1;
     ctx.fillStyle = '#94A3B8';
-    ctx.font = '11px "Inter", sans-serif';
+    ctx.font = '500 11px "DM Sans", sans-serif';
     ctx.textAlign = 'left';
 
     const gridSteps = 5;
@@ -335,7 +335,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       ctx.fillStyle = tagColor;
       ctx.fillRect(padLeft + chartWidth + 1, latestY - 10, rightAxisWidth - 2, 20);
       ctx.fillStyle = '#FFFFFF';
-      ctx.font = '600 11px "Inter", sans-serif';
+      ctx.font = '600 11px "DM Sans", sans-serif';
       ctx.fillText(`₹${latestCandle.close.toFixed(2)}`, padLeft + chartWidth + 5, latestY + 4);
     }
 
@@ -347,7 +347,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     ctx.stroke();
 
     ctx.fillStyle = '#94A3B8';
-    ctx.font = '600 10px "Inter", sans-serif';
+    ctx.font = '600 10px "DM Sans", sans-serif';
     ctx.fillText('RSI (14) Momentum', padLeft + 2, dividerY + 14);
 
     const rsiToY = (rsi: number) => rsiTop + rsiHeight - (rsi / 100) * rsiHeight;
@@ -369,7 +369,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     ctx.restore();
 
     ctx.fillStyle = '#64748B';
-    ctx.font = '10px "Inter", sans-serif';
+    ctx.font = '500 10px "DM Sans", sans-serif';
     ctx.fillText('70', padLeft + chartWidth + 8, y70 + 3);
     ctx.fillText('30', padLeft + chartWidth + 8, y30 + 3);
 
@@ -398,7 +398,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
 
     // Time Axis Labels
     ctx.fillStyle = '#94A3B8';
-    ctx.font = '11px "Inter", sans-serif';
+    ctx.font = '500 11px "DM Sans", sans-serif';
     for (let i = 0; i < count; i += vStride) {
       const c = visibleCandles[i];
       const x = idxToX(i);

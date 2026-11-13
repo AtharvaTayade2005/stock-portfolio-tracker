@@ -845,9 +845,9 @@ export const App: React.FC = () => {
   }, [livePortfolio]);
 
   return (
-    <div className="min-h-screen bg-[#070B12] text-slate-100 flex flex-col selection:bg-emerald-600 selection:text-white">
+    <div className="min-h-screen agy-ambient-bg bg-[#070B12] text-slate-100 flex flex-col selection:bg-emerald-600 selection:text-white">
       {/* ================= TOP COMMAND BAR ================= */}
-      <header className="sticky top-0 z-30 bg-[#0B1320] text-white border-b border-slate-800 shadow-lg">
+      <header className="sticky top-0 z-30 agy-header-glass bg-[#0B1320]/85 text-white border-b border-slate-800 shadow-lg">
         <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
           {/* Brand + Live NSE/BSE Indices */}
           <div className="flex items-center gap-4 flex-wrap">
@@ -1222,7 +1222,7 @@ export const App: React.FC = () => {
             })}
           </div>
 
-          <div className="p-4 space-y-4 flex-1">
+          <div key={activeTab} className="p-4 space-y-4 flex-1 agy-panel-enter">
             {/* ================= TAB 1: LIVE TERMINAL & REAL-TIME OHLC CHART ================= */}
             {activeTab === 'TERMINAL' && activeMeta && (
               <>
@@ -1252,11 +1252,11 @@ export const App: React.FC = () => {
                         >
                           {isSelectedStockBullish ? (
                             <>
-                              <TrendingUp className="w-3.5 h-3.5" /> BULLISH TREND
+                              <TrendingUp className="w-3.5 h-3.5" /> Bullish Trend
                             </>
                           ) : (
                             <>
-                              <TrendingDown className="w-3.5 h-3.5" /> BEARISH TREND
+                              <TrendingDown className="w-3.5 h-3.5" /> Bearish Trend
                             </>
                           )}
                         </span>
@@ -1291,32 +1291,32 @@ export const App: React.FC = () => {
                   {/* Authentic Real-Time NSE/BSE Session OHLC Strip (Open / High / Low / Prev. Close) */}
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 mt-4 pt-3 border-t border-slate-800 font-mono text-xs">
                     <div className="bg-[#111A2B] rounded-lg px-3 py-2 border border-slate-800">
-                      <div className="text-[10px] uppercase text-slate-400">Open (09:15 IST)</div>
-                      <div className="font-bold text-slate-100 mt-0.5">
+                      <div className="text-[11px] text-slate-400">Open (09:15 IST)</div>
+                      <div className="font-semibold text-slate-100 mt-0.5">
                         {formatINR(activeTick?.open ?? activeMeta.prevClose)}
                       </div>
                     </div>
                     <div className="bg-emerald-950/30 rounded-lg px-3 py-2 border border-emerald-500/30">
-                      <div className="text-[10px] uppercase text-emerald-400">Day High</div>
-                      <div className="font-bold text-[#00D09C] mt-0.5">
+                      <div className="text-[11px] text-emerald-400">Day High</div>
+                      <div className="font-semibold text-[#00D09C] mt-0.5">
                         {formatINR(activeTick?.dayHigh ?? activeMeta.basePrice)}
                       </div>
                     </div>
                     <div className="bg-rose-950/30 rounded-lg px-3 py-2 border border-rose-500/30">
-                      <div className="text-[10px] uppercase text-rose-400">Day Low</div>
-                      <div className="font-bold text-[#FB7185] mt-0.5">
+                      <div className="text-[11px] text-rose-400">Day Low</div>
+                      <div className="font-semibold text-[#FB7185] mt-0.5">
                         {formatINR(activeTick?.dayLow ?? activeMeta.basePrice)}
                       </div>
                     </div>
                     <div className="bg-[#111A2B] rounded-lg px-3 py-2 border border-slate-800">
-                      <div className="text-[10px] uppercase text-slate-400">Prev. Close</div>
-                      <div className="font-bold text-slate-100 mt-0.5">
+                      <div className="text-[11px] text-slate-400">Prev. Close</div>
+                      <div className="font-semibold text-slate-100 mt-0.5">
                         {formatINR(activeTick?.prevClose ?? activeMeta.prevClose)}
                       </div>
                     </div>
                     <div className="bg-amber-950/30 rounded-lg px-3 py-2 border border-amber-500/30">
-                      <div className="text-[10px] uppercase text-amber-400">3:30 Close / LTP</div>
-                      <div className="font-bold text-amber-300 mt-0.5">
+                      <div className="text-[11px] text-amber-400">3:30 Close / LTP</div>
+                      <div className="font-semibold text-amber-300 mt-0.5">
                         {formatINR(activeTick?.price ?? activeMeta.basePrice)}
                       </div>
                     </div>
@@ -1400,7 +1400,7 @@ export const App: React.FC = () => {
                 ) : (
                   <div className="bg-[#0D1421] rounded-xl border border-slate-800 overflow-hidden shadow-md">
                     <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-[#111A2B]">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                      <h3 className="text-xs font-semibold text-slate-200">
                         Verified NSE/BSE Demat Holdings ({filteredHoldings.length})
                       </h3>
                       <span className="text-xs font-mono text-[#00D09C]">
@@ -1410,7 +1410,7 @@ export const App: React.FC = () => {
                     <div className="overflow-x-auto">
                       <table className="w-full text-left border-collapse text-xs">
                         <thead>
-                          <tr className="border-b border-slate-800 text-[11px] font-mono uppercase text-slate-400 bg-[#0B111E]">
+                          <tr className="border-b border-slate-800 text-[11px] font-mono text-slate-400 bg-[#0B111E]">
                             <th className="py-2.5 px-3">Instrument / Broker</th>
                             <th className="py-2.5 px-3 text-right">Qty</th>
                             <th className="py-2.5 px-3 text-right">FIFO Avg Cost</th>
@@ -1491,18 +1491,18 @@ export const App: React.FC = () => {
                                         setSelectedSymbol(h.symbol);
                                         setOrderSide('BUY');
                                       }}
-                                      className="px-2 py-1 rounded text-[10px] font-bold bg-[#059669] text-white hover:bg-emerald-500 cursor-pointer"
+                                      className="px-2.5 py-1 rounded text-[11px] font-semibold bg-[#059669] text-white hover:bg-emerald-500 cursor-pointer"
                                     >
-                                      +BUY
+                                      Buy
                                     </button>
                                     <button
                                       onClick={() => {
                                         setSelectedSymbol(h.symbol);
                                         setOrderSide('SELL');
                                       }}
-                                      className="px-2 py-1 rounded text-[10px] font-bold bg-[#E11D48] text-white hover:bg-rose-500 cursor-pointer"
+                                      className="px-2.5 py-1 rounded text-[11px] font-semibold bg-[#E11D48] text-white hover:bg-rose-500 cursor-pointer"
                                     >
-                                      -SELL
+                                      Sell
                                     </button>
                                   </div>
                                 </td>
@@ -1553,8 +1553,8 @@ export const App: React.FC = () => {
                             {bank.bankName}
                           </span>
                           {bank.isPrimaryThreeInOne && (
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
-                              3-IN-1 PRIMARY
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                              Primary 3-in-1
                             </span>
                           )}
                         </div>
