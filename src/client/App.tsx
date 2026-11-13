@@ -55,6 +55,7 @@ import {
 } from '../shared/indianTaxAndCharges.js';
 import { computeQuantRiskMetrics } from '../shared/quantRiskEngine.js';
 import { CandlestickChart } from './components/CandlestickChart.js';
+import { StepUpSipAndCsvPanel } from './components/StepUpSipAndCsvPanel.js';
 
 type ActiveTab =
   | 'TERMINAL'
@@ -75,6 +76,8 @@ interface BrokerNotificationReceipt {
   broker: string;
   cdslBoId: string;
   rbacRole: RbacRole;
+  pbkdf2DigestPrefix?: string;
+  securityAuditId?: string;
   exportedHoldingsCount: number;
   status: 'BROKER_NOTIFIED_200_OK';
   timestamp: string;
@@ -1939,7 +1942,7 @@ export const App: React.FC = () => {
                           className="p-3.5 flex flex-wrap items-center justify-between gap-2"
                         >
                           <div className="space-y-0.5">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span className="font-semibold text-white">{n.broker}</span>
                               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 text-[#00D09C] border border-emerald-500/30">
                                 {n.status}
@@ -1947,6 +1950,11 @@ export const App: React.FC = () => {
                               <span className="text-[11px] font-mono text-slate-400">
                                 ID: {n.notificationId} • BOID: {n.cdslBoId}
                               </span>
+                              {n.pbkdf2DigestPrefix && (
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-amber-300 border border-slate-700">
+                                  {n.pbkdf2DigestPrefix}
+                                </span>
+                              )}
                             </div>
                             <p className="text-slate-300">{n.message}</p>
                           </div>
@@ -2282,6 +2290,10 @@ export const App: React.FC = () => {
                     </div>
                   )}
                 </div>
+
+                {livePortfolio && (
+                  <StepUpSipAndCsvPanel portfolio={livePortfolio} taxReport={taxReport} />
+                )}
               </div>
             )}
 

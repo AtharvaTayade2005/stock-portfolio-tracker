@@ -16,9 +16,18 @@ import {
   computeIndianCapitalGainsTax,
   generateMarketDepthLadder,
 } from '../src/shared/indianTaxAndCharges.js';
-import { computeQuantRiskMetrics } from '../src/shared/quantRiskEngine.js';
+import {
+  computeQuantRiskMetrics,
+  computeStepUpSipProjection,
+} from '../src/shared/quantRiskEngine.js';
+import {
+  evaluateBrokerImportSecurity,
+  hashCredentialPBKDF2,
+  maskSensitiveIdentifier,
+  verifyCredentialPBKDF2,
+} from '../src/server/securityService.js';
 
-describe('Indian Stock Market Portfolio Tracker Core Engines (Phase 1 – Phase 4)', () => {
+describe('Indian Stock Market Portfolio Tracker Core Engines (Phase 1 – Phase 5)', () => {
   it('starts portfolio with 0 pre-seeded holdings and 3 linked Indian bank accounts', () => {
     const db = createDatabase(':memory:');
     const ledger = new LedgerService(db);
@@ -236,5 +245,41 @@ describe('Indian Stock Market Portfolio Tracker Core Engines (Phase 1 – Phase 
     assert.ok(risk.var99DailyINR > risk.var95DailyINR);
     assert.ok(risk.var95TenDayINR > risk.var95DailyINR);
     assert.ok(risk.hhiConcentrationIndex > 0 && risk.hhiConcentrationIndex <= 10000);
+  });
+
+  it('verifies PBKDF2-HMAC-SHA256 credential hashing, constant-time verification, PII masking, and RBAC AUDITOR_READ_ONLY rejection (Phase 5)', () => {
+    const hashed = hashCredentialPBKDF2('482910');
+    assert.equal(verifyCredentialPBKDF2('482910', hashed.combinedToken), true);
+    assert.equal(verifyCredentialPBKDF2('000000', hashed.combinedToken), false);
+
+    assert.equal(maskSensitiveIdentifier('1208160098412231'), 'XXXX-XXXX-2231');
+
+    const denied = evaluateBrokerImportSecurity({
+      rbacRole: 'AUDITOR_READ_ONLY',
+      cdslBoId: '1208160098412231',
+      cdslTpin: '482910',
+      otpCode: '839201',
+    });
+    assert.equal(denied.allowed, false);
+    assert.equal(denied.httpStatus, 403);
+
+    const approved = evaluateBrokerImportSecurity({
+      rbacRole: 'OWNER_ADMIN',
+      cdslBoId: '1208160098412231',
+      cdslTpin: '482910',
+      otpCode: '839201',
+    });
+    assert.equal(approved.allowed, true);
+    assert.equal(approved.httpStatus, 200);
+    assert.equal(approved.maskedBoId, 'XXXX-XXXX-2231');
+    assert.ok(approved.pbkdf2DigestPrefix.startsWith('PBKDF2-SHA256:'));
+  });
+
+  it('computes multi-year Step-Up SIP compounding wealth and inflation-adjusted purchasing power (Phase 5)', () => {
+    const sip = computeStepUpSipProjection(25000, 10, 14.5, 10);
+    assert.ok(sip.totalInvestedINR > 25000 * 120);
+    assert.ok(sip.finalCorpusINR > sip.totalInvestedINR);
+    assert.ok(sip.totalWealthGainedINR > 0);
+    assert.ok(sip.inflationAdjustedCorpusINR < sip.finalCorpusINR);
   });
 });

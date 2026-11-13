@@ -14,6 +14,10 @@ import { LedgerService } from './ledgerService.js';
 import { AlertEngine } from './alertEngine.js';
 import { MarketEngine } from './marketEngine.js';
 import { AiCopilotService } from './aiCopilot.js';
+import {
+  evaluateBrokerImportSecurity,
+  maskSensitiveIdentifier,
+} from './securityService.js';
 
 const PORT = Number(process.env.PORT || 4000);
 
@@ -170,7 +174,10 @@ const server = http.createServer(async (req, res) => {
         initialBalance: number;
         isPrimaryThreeInOne?: boolean;
       }>(req);
-      const bank = ledgerService.linkBankAccount(body);
+      const bank = ledgerService.linkBankAccount({
+        ...body,
+        accountNumberMasked: maskSensitiveIdentifier(body.accountNumberMasked),
+      });
       const snapshot = ledgerService.getPortfolioSnapshot(marketEngine.getLatestTicksMap());
       sendJson(res, 201, { bank, portfolio: snapshot });
       return;
@@ -201,26 +208,13 @@ const server = http.createServer(async (req, res) => {
         };
       }>(req);
 
-      const rbacRole = body.auth?.rbacRole ?? 'OWNER_ADMIN';
-      if (rbacRole === 'AUDITOR_READ_ONLY') {
-        sendJson(res, 403, {
-          error:
-            'RBAC Permission Denied: AUDITOR_READ_ONLY role cannot import or mutate external broker portfolios.',
+      const secCheck = evaluateBrokerImportSecurity(body.auth);
+      if (!secCheck.allowed) {
+        sendJson(res, secCheck.httpStatus, {
+          error: secCheck.error,
+          securityAuditId: secCheck.securityAuditId,
         });
         return;
-      }
-
-      if (body.auth) {
-        const boId = (body.auth.cdslBoId || '').replace(/\s+/g, '');
-        const tpin = (body.auth.cdslTpin || '').trim();
-        const otp = (body.auth.otpCode || '').trim();
-        if (boId.length < 8 || tpin.length < 4 || otp.length < 4) {
-          sendJson(res, 401, {
-            error:
-              'CDSL / Broker Authentication Failed: Valid CDSL 16-digit BOID, 6-digit TPIN, and 2FA OTP are required to verify ownership.',
-          });
-          return;
-        }
       }
 
       // Ensure any imported symbols not yet in catalog are registered from live NSE/BSE feed
@@ -239,12 +233,14 @@ const server = http.createServer(async (req, res) => {
       const brokerNotifications = uniqueBrokers.map((broker) => ({
         notificationId: `ACK-${broker.replace(/\s+/g, '').toUpperCase()}-${Date.now().toString().slice(-6)}`,
         broker,
-        cdslBoId: body.auth?.cdslBoId || '12081600-VERIFIED',
-        rbacRole,
+        cdslBoId: secCheck.maskedBoId,
+        rbacRole: secCheck.rbacRole,
+        pbkdf2DigestPrefix: secCheck.pbkdf2DigestPrefix,
+        securityAuditId: secCheck.securityAuditId,
         exportedHoldingsCount: (body.items || []).filter((i) => i.brokerSource === broker).length,
         status: 'BROKER_NOTIFIED_200_OK' as const,
         timestamp,
-        message: `Outbound CDSL / OAuth Webhook dispatched to ${broker}: Confirmed that verified account owner exported Demat holdings to KitePulse.`,
+        message: `Outbound CDSL / OAuth Webhook dispatched to ${broker}: Confirmed that verified account owner (${secCheck.maskedBoId}) exported Demat holdings to KitePulse.`,
       }));
 
       sendJson(res, 200, {
