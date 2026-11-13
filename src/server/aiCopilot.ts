@@ -159,61 +159,62 @@ export class AiCopilotService {
     else if (riskScore <= 35) riskLabel = 'CONSERVATIVE';
 
     // Scenario 1: Nifty IT & Mid/Small-Cap -5% Correction
+    const hasOpenHoldings = portfolio.holdingsMarketValue > 0;
+    const proFormaMarginBase = portfolio.cashBalance;
+    const exposureDenominator = hasOpenHoldings
+      ? portfolio.holdingsMarketValue
+      : Math.max(1, proFormaMarginBase);
+
     const itAndMidHoldings = portfolio.holdings.filter(
       (h) =>
         h.sector === 'IT Services' ||
         h.segment === 'MID_CAP' ||
         h.segment === 'SMALL_CAP'
     );
-    const itShockImpact = itAndMidHoldings.reduce(
-      (sum, h) => sum + h.marketValue * (-0.05 * h.beta),
-      0
-    );
+    const itShockImpact = hasOpenHoldings
+      ? itAndMidHoldings.reduce((sum, h) => sum + h.marketValue * (-0.05 * h.beta), 0)
+      : proFormaMarginBase * -0.05;
 
     // Scenario 2: Nifty 50 / Sensex -3% Broad Drawdown (including F&O delta/beta)
-    const broadShockImpact = portfolio.holdings.reduce(
-      (sum, h) => sum + h.marketValue * (-0.03 * h.beta),
-      0
-    );
+    const broadShockImpact = hasOpenHoldings
+      ? portfolio.holdings.reduce((sum, h) => sum + h.marketValue * (-0.03 * h.beta), 0)
+      : proFormaMarginBase * -0.03;
 
     // Scenario 3: RBI Repo Rate Hold / Banking NIM +2.5% Rally vs High-Beta -3%
-    const rbiShockImpact = portfolio.holdings.reduce((sum, h) => {
-      if (h.sector === 'Banking & Finance') return sum + h.marketValue * 0.025;
-      return sum + h.marketValue * (-0.03 * h.beta);
-    }, 0);
+    const rbiShockImpact = hasOpenHoldings
+      ? portfolio.holdings.reduce((sum, h) => {
+          if (h.sector === 'Banking & Finance') return sum + h.marketValue * 0.025;
+          return sum + h.marketValue * (-0.03 * h.beta);
+        }, 0)
+      : proFormaMarginBase * -0.012;
 
     const stressTestScenarios = [
       {
         scenarioName: 'Nifty IT & Mid/Small-Cap -5% Pullback',
         estimatedPnlImpact: Number(itShockImpact.toFixed(2)),
-        estimatedPnlPercent:
-          portfolio.holdingsMarketValue > 0
-            ? Number(((itShockImpact / portfolio.holdingsMarketValue) * 100).toFixed(2))
-            : 0,
+        estimatedPnlPercent: Number(((itShockImpact / exposureDenominator) * 100).toFixed(2)),
         mostVulnerableSymbol: itAndMidHoldings[0]?.symbol ?? 'DIXON',
-        explanation:
-          'Applies a -5.0% shock scaled by each holding’s beta across NSE IT Services, Mid-Cap, and Small-Cap positions.',
+        explanation: hasOpenHoldings
+          ? 'Applies a -5.0% shock scaled by each holding’s beta across NSE IT Services, Mid-Cap, and Small-Cap positions.'
+          : `Pro-Forma on ${formatINR(proFormaMarginBase)} Demat Margin (1.0x beta): estimates capital at risk if deployed into mid-cap/IT before a -5% correction.`,
       },
       {
         scenarioName: 'Nifty 50 & Sensex -3% Broad Index Correction',
         estimatedPnlImpact: Number(broadShockImpact.toFixed(2)),
-        estimatedPnlPercent:
-          portfolio.holdingsMarketValue > 0
-            ? Number(((broadShockImpact / portfolio.holdingsMarketValue) * 100).toFixed(2))
-            : 0,
+        estimatedPnlPercent: Number(((broadShockImpact / exposureDenominator) * 100).toFixed(2)),
         mostVulnerableSymbol: topHolding?.symbol ?? 'RELIANCE',
-        explanation: `With a portfolio beta of ${portfolio.portfolioBeta.toFixed(2)}x (including NFO Put hedge), a 3% benchmark drop impacts deployed holdings by ${formatINR(broadShockImpact)}.`,
+        explanation: hasOpenHoldings
+          ? `With a portfolio beta of ${portfolio.portfolioBeta.toFixed(2)}x (including NFO Put hedge), a 3% benchmark drop impacts deployed holdings by ${formatINR(broadShockImpact)}.`
+          : `Pro-Forma on ${formatINR(proFormaMarginBase)} Demat Margin at 1.00x Nifty 50 beta: a -3.0% broad market drawdown corresponds to ${formatINR(broadShockImpact)}.`,
       },
       {
         scenarioName: 'RBI Liquidity Tightening (Banks +2.5%, Growth -3%)',
         estimatedPnlImpact: Number(rbiShockImpact.toFixed(2)),
-        estimatedPnlPercent:
-          portfolio.holdingsMarketValue > 0
-            ? Number(((rbiShockImpact / portfolio.holdingsMarketValue) * 100).toFixed(2))
-            : 0,
+        estimatedPnlPercent: Number(((rbiShockImpact / exposureDenominator) * 100).toFixed(2)),
         mostVulnerableSymbol: 'DIXON',
-        explanation:
-          'PSU & Private Banks (HDFCBANK, SBIN, ICICIBANK) gain +2.5% while high-beta mid/small caps compress by 3% * beta.',
+        explanation: hasOpenHoldings
+          ? 'PSU & Private Banks (HDFCBANK, SBIN, ICICIBANK) gain +2.5% while high-beta mid/small caps compress by 3% * beta.'
+          : `Pro-Forma on ${formatINR(proFormaMarginBase)} Demat Margin (40% Banking / 60% Growth split): models net RBI policy sensitivity of ${formatINR(rbiShockImpact)}.`,
       },
     ];
 
@@ -259,24 +260,52 @@ export class AiCopilotService {
         : `Portfolio beta (${portfolio.portfolioBeta.toFixed(2)}x) is well-hedged against Nifty 50 swings.`,
     ];
 
-    let queryAnswer = `Grounded in your NSE/BSE/NFO/MF FIFO ledger: Total Net Worth is ${formatINR(portfolio.totalEquity)} (${formatINR(portfolio.holdingsMarketValue)} invested across ${portfolio.holdings.length} positions + ${formatINR(portfolio.cashBalance)} free margin). A 5% pullback in IT & Mid/Small-Caps impacts P&L by ${formatINR(itShockImpact)}.`;
+    const quantMetrics = computeQuantRiskMetrics(portfolio);
+    const taxMetrics = computeIndianCapitalGainsTax(portfolio.holdings, portfolio.totalRealizedPnl);
+
+    let queryAnswer = `Grounded in your NSE/BSE/NFO/MF FIFO ledger: Total Net Worth is ${formatINR(portfolio.totalEquity)} (${formatINR(portfolio.holdingsMarketValue)} invested across ${portfolio.holdings.length} positions + ${formatINR(portfolio.cashBalance)} free margin). A -5.0% pullback scenario shifts capital by ${formatINR(itShockImpact)}.`;
 
     if (customQuestion && customQuestion.trim().length > 0) {
       const q = customQuestion.toLowerCase();
       const pctMatch = q.match(/(\d+(?:\.\d+)?)\s*%/);
       const customShockPct = pctMatch ? Number(pctMatch[1]) / 100 : 0.05;
 
-      if (q.includes('nifty') || q.includes('drop') || q.includes('fall') || q.includes('crash')) {
-        const customImpact = portfolio.holdings.reduce(
-          (sum, h) => sum - h.marketValue * customShockPct * h.beta,
-          0
-        );
-        queryAnswer = `Stress Test for "${customQuestion}": A ${(customShockPct * 100).toFixed(1)}% drop in Nifty 50 / Sensex (beta-adjusted across your Large-Cap, Mid/Small-Cap, F&O, ETF, and Mutual Fund holdings) shifts portfolio value by ${formatINR(customImpact)} (${((customImpact / Math.max(1, portfolio.totalEquity)) * 100).toFixed(2)}% of net worth).`;
+      if (q.includes('tax') || q.includes('stcg') || q.includes('ltcg') || q.includes('sebi') || q.includes('harvest')) {
+        queryAnswer = `SEBI Capital Gains Audit (${customQuestion}): Realized STCG stands at ${formatINR(taxMetrics.realizedStcgGross)} with est. Sec 111A tax (20.8% incl. cess) of ${formatINR(taxMetrics.estimatedStcgTax)}. Sec 112A LTCG exemption remaining is ${formatINR(taxMetrics.ltcgExemptionLimit)}, and potential tax-loss harvesting savings are ${formatINR(taxMetrics.potentialTaxSavingsViaHarvesting)}.`;
+      } else if (q.includes('bank') || q.includes('upi') || q.includes('liquidity') || q.includes('cash') || q.includes('margin')) {
+        const bankTotal = portfolio.bankAccounts.reduce((acc, b) => acc + b.balance, 0);
+        queryAnswer = `3-in-1 Bank & Margin Audit (${customQuestion}): Free Demat trading margin is ${formatINR(portfolio.cashBalance)}, backed by ${formatINR(bankTotal)} across ${portfolio.bankAccounts.length} linked Indian banks (${portfolio.bankAccounts.map((b) => `${b.bankName}: ${formatINR(b.balance)}`).join(', ')}).`;
+      } else if (q.includes('gold') || q.includes('silver') || q.includes('hedge') || q.includes('bullion')) {
+        const bullImpact = hasOpenHoldings
+          ? portfolio.holdings.reduce((sum, h) => sum + h.marketValue * (-customShockPct * Math.min(0.4, h.beta * 0.25)), 0)
+          : proFormaMarginBase * (-customShockPct * 0.15);
+        queryAnswer = `Bullion & Low-Beta Hedge Audit (${customQuestion}): Shifting 15%–20% into GOLDBEES / MCX-GOLD (0.15x equity beta) cuts your portfolio sensitivity under a -${(customShockPct * 100).toFixed(1)}% shock to roughly ${formatINR(bullImpact)} while reducing portfolio drawdown.`;
       } else if (q.includes('fno') || q.includes('option') || q.includes('derivative')) {
         const fnoHoldings = portfolio.holdings.filter((h) => h.segment === 'FNO');
         const fnoValue = fnoHoldings.reduce((s, h) => s + h.marketValue, 0);
         const fnoPnl = fnoHoldings.reduce((s, h) => s + h.unrealizedPnl, 0);
-        queryAnswer = `Your NFO Derivatives exposure (${fnoHoldings.map((h) => h.symbol).join(', ')}) has a current value of ${formatINR(fnoValue)} with ${formatINR(fnoPnl)} MTM P&L. Note that NIFTY 24000 PE (β = -2.1) acts as a downside delta hedge when Nifty falls.`;
+        queryAnswer = `NFO Derivatives Audit (${customQuestion}): ${fnoHoldings.length} active F&O contract(s) valued at ${formatINR(fnoValue)} (${formatINR(fnoPnl)} MTM P&L). Long Nifty PE contracts carry negative delta/beta to cushion broad index drops.`;
+      } else if (
+        q.includes('nifty') ||
+        q.includes('mid') ||
+        q.includes('drop') ||
+        q.includes('fall') ||
+        q.includes('crash') ||
+        q.includes('shock') ||
+        q.includes('pullback') ||
+        q.includes('rbi') ||
+        q.includes('stress')
+      ) {
+        const customImpact = hasOpenHoldings
+          ? portfolio.holdings.reduce((sum, h) => sum - h.marketValue * customShockPct * h.beta, 0)
+          : -proFormaMarginBase * customShockPct;
+        queryAnswer = `Stress Test for "${customQuestion}": A ${(customShockPct * 100).toFixed(1)}% drawdown ${
+          hasOpenHoldings
+            ? '(beta-adjusted across your live FIFO holdings)'
+            : `(pro-forma on ${formatINR(proFormaMarginBase)} free Demat margin)`
+        } shifts net worth by ${formatINR(customImpact)} (${((customImpact / Math.max(1, portfolio.totalEquity)) * 100).toFixed(2)}% of total equity).`;
+      } else {
+        queryAnswer = `Custom Risk Audit for "${customQuestion}": Net Worth is ${formatINR(portfolio.totalEquity)} across ${portfolio.holdings.length} open position(s) (${formatINR(portfolio.cashBalance)} Demat margin). 1-Day 95% Parametric VaR is ${formatINR(quantMetrics.var95DailyINR)}, Sharpe Ratio is ${quantMetrics.sharpeRatio.toFixed(2)}, and HHI Concentration is ${quantMetrics.hhiConcentrationIndex}.`;
       }
     }
 

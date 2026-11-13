@@ -227,6 +227,8 @@ export const App: React.FC = () => {
   // AI Copilot State
   const [copilotQuestion, setCopilotQuestion] = useState<string>('');
   const [copilotLoading, setCopilotLoading] = useState<boolean>(false);
+  const [copilotAuditCount, setCopilotAuditCount] = useState<number>(0);
+  const [copilotLastRunTime, setCopilotLastRunTime] = useState<string>('');
 
   // Price flash state
   const [flashMap, setFlashMap] = useState<Record<string, 'UP' | 'DOWN'>>({});
@@ -848,14 +850,20 @@ export const App: React.FC = () => {
   const runCopilotAudit = useCallback(async (question?: string) => {
     setCopilotLoading(true);
     try {
-      const res = await fetch('/api/copilot/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
-      });
+      const trimmed = question?.trim() || undefined;
+      const [res] = await Promise.all([
+        fetch('/api/copilot/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: trimmed }),
+        }),
+        new Promise((resolve) => setTimeout(resolve, 240)),
+      ]);
       if (res.ok) {
         const data = (await res.json()) as AiCopilotAnalysis;
         setAiAnalysis(data);
+        setCopilotAuditCount((c) => c + 1);
+        setCopilotLastRunTime(new Date().toLocaleTimeString('en-IN', { hour12: false }));
       }
     } finally {
       setCopilotLoading(false);
@@ -1188,8 +1196,9 @@ export const App: React.FC = () => {
 
       {/* ================= MAIN WORKSPACE GRID ================= */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-0">
-        {/* LEFT COLUMN (3 COLS): UNIVERSAL NSE/BSE WATCHLIST WITH BULL/BEAR BARS */}
-        <aside className="lg:col-span-3 bg-[#0B111E] border-r border-slate-800 flex flex-col h-[calc(100vh-88px)] sticky top-[88px]">
+        {/* LEFT COLUMN (3 COLS ON /terminal): UNIVERSAL NSE/BSE WATCHLIST WITH BULL/BEAR BARS */}
+        {activeTab === 'TERMINAL' && (
+        <aside className="lg:col-span-3 bg-[#0B111E] border-r border-slate-800 flex flex-col h-[calc(100vh-128px)] sticky top-[128px]">
           <div className="p-3 border-b border-slate-800 bg-[#0D1526] space-y-2.5">
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1320,45 +1329,16 @@ export const App: React.FC = () => {
             })}
           </div>
         </aside>
+        )}
 
-        {/* CENTER COLUMN (6 COLS): NAVIGATION ROUTES + LOGIN / PORTFOLIO / TERMINAL / RAG COPILOT */}
-        <main className="lg:col-span-6 flex flex-col bg-[#070B12] min-h-[calc(100vh-88px)]">
-          {/* Multi-Route Navigation Bar (Main Route: /portfolio) */}
-          <div className="bg-[#0B111E] border-b border-slate-800 px-4 flex items-center gap-1 overflow-x-auto">
-            {(
-              [
-                [
-                  'HOLDINGS_AND_LOTS',
-                  `Portfolio (${livePortfolio?.holdings.length ?? 0})`,
-                  Layers,
-                ],
-                ['TERMINAL', 'Stocks & Charts', Activity],
-                ['BANK_AND_FUNDS', '3-in-1 Bank & UPI', Landmark],
-                ['BROKER_IMPORT', 'Broker Import', FolderInput],
-                ['TAX_AND_CONTRACT_NOTE', 'SEBI Tax & Note', ShieldAlert],
-                ['MARKET_NEWS', `Market News (${news.length})`, Flame],
-                ['AI_COPILOT', 'RAG Risk Copilot', Sparkles],
-                ['ALERTS_AND_ORDERS', `Orders & Alerts (${alerts.length})`, Bell],
-              ] as Array<[ActiveTab, string, React.ComponentType<{ className?: string }>]>
-            ).map(([tabId, label, Icon]) => {
-              const active = !isLoginRoute && activeTab === tabId;
-              return (
-                <button
-                  key={tabId}
-                  onClick={() => navigateToTab(tabId)}
-                  className={`flex items-center gap-1.5 px-3 py-3 text-xs font-semibold border-b-2 whitespace-nowrap transition cursor-pointer ${
-                    active
-                      ? 'border-[#00D09C] text-[#00D09C] bg-emerald-950/30'
-                      : 'border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/60'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{label}</span>
-                </button>
-              );
-            })}
-          </div>
-
+        {/* PAGE CONTENT AREA: FULL-WIDTH ON PAGES, 6-COL CENTER IN TRADING TERMINAL */}
+        <main
+          className={
+            activeTab === 'TERMINAL'
+              ? 'lg:col-span-6 flex flex-col bg-[#070B12] min-h-[calc(100vh-128px)]'
+              : 'lg:col-span-12 max-w-7xl mx-auto w-full flex flex-col bg-[#070B12] min-h-[calc(100vh-128px)] px-2 sm:px-6 py-2'
+          }
+        >
           <div
             key={activeTab}
             className="p-4 space-y-4 flex-1 agy-panel-enter"
@@ -2445,15 +2425,21 @@ export const App: React.FC = () => {
                 )}
 
                 <div className="bg-[#0D1421] rounded-xl border border-slate-800 p-4 space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-[#00D09C]" />
                       <h3 className="text-sm font-semibold text-white">
                         Portfolio Risk & Stress-Test Analysis
                       </h3>
+                      {copilotAuditCount > 0 && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/70 text-[#00D09C] border border-emerald-500/30 font-medium">
+                          Audit #{copilotAuditCount} • Synced {copilotLastRunTime} IST
+                        </span>
+                      )}
                     </div>
                     <button
-                      onClick={() => runCopilotAudit(copilotQuestion)}
+                      type="button"
+                      onClick={() => void runCopilotAudit(copilotQuestion)}
                       disabled={copilotLoading}
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#059669] text-white hover:bg-emerald-500 cursor-pointer disabled:opacity-50"
                     >
@@ -2461,20 +2447,53 @@ export const App: React.FC = () => {
                     </button>
                   </div>
 
-                  <div className="flex gap-2">
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void runCopilotAudit(copilotQuestion);
+                    }}
+                    className="flex flex-wrap sm:flex-nowrap gap-2"
+                  >
                     <input
                       type="text"
                       value={copilotQuestion}
                       onChange={(e) => setCopilotQuestion(e.target.value)}
                       placeholder="Ask e.g. 'What happens to my portfolio if Nifty 50 drops 4%?'"
-                      className="flex-1 px-3 py-2 text-xs rounded-lg border border-slate-700 bg-[#070B12] text-slate-100 placeholder:text-slate-500"
+                      className="flex-1 min-w-[200px] px-3 py-2 text-xs rounded-lg border border-slate-700 bg-[#070B12] text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
                     />
                     <button
-                      onClick={() => runCopilotAudit(copilotQuestion)}
-                      className="px-4 py-2 rounded-lg text-xs font-semibold bg-[#111A2B] text-[#00D09C] border border-emerald-500/30 cursor-pointer"
+                      type="submit"
+                      disabled={copilotLoading}
+                      className="px-4 py-2 rounded-lg text-xs font-semibold bg-[#111A2B] hover:bg-emerald-950/50 text-[#00D09C] border border-emerald-500/40 cursor-pointer transition disabled:opacity-50"
                     >
-                      Analyze
+                      {copilotLoading ? 'Analyzing Portfolio...' : 'Analyze Portfolio'}
                     </button>
+                  </form>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-slate-400 mr-1">Quick Stress Tests:</span>
+                    {(
+                      [
+                        ['Nifty -5% Crash', 'What happens to my portfolio if Nifty 50 drops 5%?'],
+                        ['Mid-Cap -8% Shock', 'Simulate an -8% shock across Mid-Cap & IT holdings'],
+                        ['SEBI STCG Tax Audit', 'Analyze my SEBI Sec 111A STCG tax & harvesting savings'],
+                        ['3-in-1 Bank Liquidity', 'Review my 3-in-1 bank balances and Demat margin liquidity'],
+                        ['Gold 24K Hedge', 'How does adding GOLDBEES hedge a 5% equity crash?'],
+                      ] as const
+                    ).map(([label, prompt]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        disabled={copilotLoading}
+                        onClick={() => {
+                          setCopilotQuestion(prompt);
+                          void runCopilotAudit(prompt);
+                        }}
+                        className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-[#111A2B] hover:bg-slate-800 text-slate-300 border border-slate-700/80 transition cursor-pointer disabled:opacity-50"
+                      >
+                        {label}
+                      </button>
+                    ))}
                   </div>
 
                   {aiAnalysis && (
@@ -2493,16 +2512,22 @@ export const App: React.FC = () => {
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
                         {aiAnalysis.stressTestScenarios.map((sc) => (
-                          <div
+                          <button
                             key={sc.scenarioName}
-                            className="p-3 rounded-lg border border-rose-500/30 bg-rose-950/20 text-xs"
+                            type="button"
+                            disabled={copilotLoading}
+                            onClick={() => {
+                              setCopilotQuestion(sc.scenarioName);
+                              void runCopilotAudit(sc.scenarioName);
+                            }}
+                            className="text-left p-3 rounded-lg border border-rose-500/30 hover:border-rose-400/60 bg-rose-950/20 hover:bg-rose-950/35 text-xs transition cursor-pointer disabled:opacity-50"
                           >
                             <div className="font-semibold text-white">{sc.scenarioName}</div>
                             <div className="font-mono text-sm font-bold text-[#FB7185] mt-1">
                               {formatINR(sc.estimatedPnlImpact)} ({sc.estimatedPnlPercent}%)
                             </div>
                             <p className="text-[11px] text-slate-400 mt-1">{sc.explanation}</p>
-                          </div>
+                          </button>
                         ))}
                       </div>
 
@@ -2707,8 +2732,9 @@ export const App: React.FC = () => {
           </div>
         </main>
 
-        {/* RIGHT COLUMN (3 COLS): ORDER EXECUTION & MARKET DEPTH */}
-        <aside className="lg:col-span-3 bg-[#0B111E] border-l border-slate-800 p-4 flex flex-col gap-4 h-[calc(100vh-88px)] sticky top-[88px] overflow-y-auto">
+        {/* RIGHT COLUMN (3 COLS ON /terminal): ORDER EXECUTION & MARKET DEPTH */}
+        {activeTab === 'TERMINAL' && (
+        <aside className="lg:col-span-3 bg-[#0B111E] border-l border-slate-800 p-4 flex flex-col gap-4 h-[calc(100vh-128px)] sticky top-[128px] overflow-y-auto">
           {/* Order Ticket */}
           <div
             className={`rounded-xl border p-4 shadow-md transition-colors bg-[#0D1421] ${
@@ -2957,6 +2983,7 @@ export const App: React.FC = () => {
             </div>
           </div>
         </aside>
+        )}
       </div>
     </div>
   );
