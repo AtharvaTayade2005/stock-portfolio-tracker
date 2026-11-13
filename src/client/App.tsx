@@ -909,6 +909,23 @@ export const App: React.FC = () => {
     return computeQuantRiskMetrics(livePortfolio);
   }, [livePortfolio]);
 
+  if (isLoginRoute) {
+    return (
+      <div className="min-h-screen agy-ambient-bg bg-[#070B12] text-slate-100 flex items-center justify-center p-4 selection:bg-emerald-600 selection:text-white">
+        <div className="w-full max-w-md">
+          <PhoneOtpLoginView
+            onLoginSuccess={(sess) => {
+              setAuthSession(sess);
+              setRbacRole(sess.rbacRole);
+              navigateToTab('HOLDINGS_AND_LOTS');
+            }}
+            onSkipToPortfolio={() => navigateToTab('HOLDINGS_AND_LOTS')}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen agy-ambient-bg bg-[#070B12] text-slate-100 flex flex-col selection:bg-emerald-600 selection:text-white">
       {/* ================= TOP COMMAND BAR ================= */}
@@ -1145,18 +1162,6 @@ export const App: React.FC = () => {
               </button>
             );
           })}
-          <button
-            type="button"
-            onClick={navigateToLogin}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ml-auto ${
-              isLoginRoute
-                ? 'bg-[#00D09C] text-slate-950 font-semibold border-[#00D09C] shadow-sm'
-                : 'bg-[#111A2B]/90 hover:bg-slate-800 text-slate-200 border-slate-700/80'
-            }`}
-          >
-            <CreditCard className="w-3.5 h-3.5" />
-            <span>Phone & OTP Login</span>
-          </button>
         </nav>
       </header>
 
@@ -1355,20 +1360,9 @@ export const App: React.FC = () => {
           </div>
 
           <div
-            key={isLoginRoute ? 'LOGIN' : activeTab}
+            key={activeTab}
             className="p-4 space-y-4 flex-1 agy-panel-enter"
           >
-            {isLoginRoute ? (
-              <PhoneOtpLoginView
-                onLoginSuccess={(sess) => {
-                  setAuthSession(sess);
-                  setRbacRole(sess.rbacRole);
-                  navigateToTab('HOLDINGS_AND_LOTS');
-                }}
-                onSkipToPortfolio={() => navigateToTab('HOLDINGS_AND_LOTS')}
-              />
-            ) : (
-              <>
             {/* ================= TAB 1: LIVE TERMINAL & REAL-TIME OHLC CHART ================= */}
             {activeTab === 'TERMINAL' && activeMeta && (
               <>
@@ -1552,14 +1546,6 @@ export const App: React.FC = () => {
                     >
                       <Bell className="w-3.5 h-3.5 text-amber-300 shrink-0" />
                       <span className="truncate">Orders & Alerts</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={navigateToLogin}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#111A2B] hover:bg-slate-800 border border-slate-700/80 text-xs font-medium text-slate-200 transition cursor-pointer"
-                    >
-                      <CreditCard className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
-                      <span className="truncate">Phone & OTP Login</span>
                     </button>
                   </div>
                 </div>
@@ -2717,8 +2703,6 @@ export const App: React.FC = () => {
                   </div>
                 </div>
               </div>
-            )}
-              </>
             )}
           </div>
         </main>

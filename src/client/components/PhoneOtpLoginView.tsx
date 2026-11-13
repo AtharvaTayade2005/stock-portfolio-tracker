@@ -90,9 +90,6 @@ export const PhoneOtpLoginView: React.FC<PhoneOtpLoginViewProps> = ({
             </p>
           </div>
         </div>
-        <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-          /login
-        </span>
       </div>
 
       {otpNotice && (
@@ -184,7 +181,7 @@ export const PhoneOtpLoginView: React.FC<PhoneOtpLoginViewProps> = ({
           disabled={submitting}
           className="w-full py-2.5 rounded-lg text-xs font-semibold bg-[#059669] hover:bg-emerald-500 text-white shadow-md transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
         >
-          <span>{submitting ? 'Verifying PBKDF2 Session...' : 'Verify OTP & Open /portfolio'}</span>
+          <span>{submitting ? 'Verifying PBKDF2 Session...' : 'Verify OTP & Sign In'}</span>
           <ArrowRight className="w-3.5 h-3.5" />
         </button>
       </form>
@@ -196,7 +193,7 @@ export const PhoneOtpLoginView: React.FC<PhoneOtpLoginViewProps> = ({
           onClick={onSkipToPortfolio}
           className="text-slate-300 hover:text-white underline cursor-pointer"
         >
-          Back to /portfolio
+          Continue to Portfolio
         </button>
       </div>
     </div>
