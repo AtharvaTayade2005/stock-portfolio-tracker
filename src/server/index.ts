@@ -20,6 +20,7 @@ import { AlertEngine } from './alertEngine.js';
 import { MarketEngine } from './marketEngine.js';
 import { AiCopilotService } from './aiCopilot.js';
 import {
+  authenticatePhoneOtpLogin,
   evaluateBrokerImportSecurity,
   maskSensitiveIdentifier,
 } from './securityService.js';
@@ -79,6 +80,18 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
 
   try {
+    if (req.method === 'POST' && pathname === '/api/auth/login') {
+      const body = await readJsonBody<{
+        phoneNumber?: string;
+        otpCode?: string;
+        rbacRole?: 'OWNER_ADMIN' | 'PORTFOLIO_IMPORTER' | 'AUDITOR_READ_ONLY';
+        upiId?: string;
+      }>(req);
+      const result = authenticatePhoneOtpLogin(body);
+      sendJson(res, result.httpStatus, result);
+      return;
+    }
+
     if (req.method === 'GET' && pathname === '/api/health') {
       sendJson(res, 200, {
         status: 'ok',

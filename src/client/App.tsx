@@ -57,16 +57,40 @@ import { computeQuantRiskMetrics } from '../shared/quantRiskEngine.js';
 import { CandlestickChart } from './components/CandlestickChart.js';
 import { StepUpSipAndCsvPanel } from './components/StepUpSipAndCsvPanel.js';
 import { RebalanceAndScannerPanel } from './components/RebalanceAndScannerPanel.js';
+import { PhoneOtpLoginView, type AuthSessionState } from './components/PhoneOtpLoginView.js';
 
 type ActiveTab =
-  | 'TERMINAL'
   | 'HOLDINGS_AND_LOTS'
+  | 'TERMINAL'
   | 'BANK_AND_FUNDS'
   | 'BROKER_IMPORT'
   | 'TAX_AND_CONTRACT_NOTE'
   | 'MARKET_NEWS'
   | 'AI_COPILOT'
   | 'ALERTS_AND_ORDERS';
+
+const TAB_TO_ROUTE: Record<ActiveTab, string> = {
+  HOLDINGS_AND_LOTS: '/portfolio',
+  TERMINAL: '/terminal',
+  BANK_AND_FUNDS: '/funds',
+  BROKER_IMPORT: '/import',
+  TAX_AND_CONTRACT_NOTE: '/tax',
+  MARKET_NEWS: '/news',
+  AI_COPILOT: '/copilot',
+  ALERTS_AND_ORDERS: '/orders',
+};
+
+const ROUTE_TO_TAB: Record<string, ActiveTab> = {
+  '/': 'HOLDINGS_AND_LOTS',
+  '/portfolio': 'HOLDINGS_AND_LOTS',
+  '/terminal': 'TERMINAL',
+  '/funds': 'BANK_AND_FUNDS',
+  '/import': 'BROKER_IMPORT',
+  '/tax': 'TAX_AND_CONTRACT_NOTE',
+  '/news': 'MARKET_NEWS',
+  '/copilot': 'AI_COPILOT',
+  '/orders': 'ALERTS_AND_ORDERS',
+};
 
 type SegmentFilter = 'ALL' | InstrumentSegment;
 
@@ -98,7 +122,48 @@ export const App: React.FC = () => {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [aiAnalysis, setAiAnalysis] = useState<AiCopilotAnalysis | null>(null);
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('TERMINAL');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    const path = typeof window !== 'undefined' ? window.location.pathname : '/portfolio';
+    return ROUTE_TO_TAB[path] ?? 'HOLDINGS_AND_LOTS';
+  });
+  const [isLoginRoute, setIsLoginRoute] = useState<boolean>(() => {
+    return typeof window !== 'undefined' && window.location.pathname === '/login';
+  });
+  const [authSession, setAuthSession] = useState<AuthSessionState | null>(null);
+
+  const navigateToTab = useCallback((tab: ActiveTab) => {
+    setIsLoginRoute(false);
+    setActiveTab(tab);
+    const targetRoute = TAB_TO_ROUTE[tab];
+    if (typeof window !== 'undefined' && window.location.pathname !== targetRoute) {
+      window.history.pushState({}, '', targetRoute);
+    }
+  }, []);
+
+  const navigateToLogin = useCallback(() => {
+    setIsLoginRoute(true);
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.history.pushState({}, '', '/login');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.location.pathname === '/') {
+      window.history.replaceState({}, '', '/portfolio');
+    }
+    const handlePopState = () => {
+      const p = window.location.pathname;
+      if (p === '/login') {
+        setIsLoginRoute(true);
+      } else {
+        setIsLoginRoute(false);
+        setActiveTab(ROUTE_TO_TAB[p] ?? 'HOLDINGS_AND_LOTS');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
   const [segmentFilter, setSegmentFilter] = useState<SegmentFilter>('ALL');
   const [brokerFilter, setBrokerFilter] = useState<'ALL' | BrokerSource>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -933,6 +998,19 @@ export const App: React.FC = () => {
             )}
 
             <button
+              onClick={navigateToLogin}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                isLoginRoute
+                  ? 'bg-[#00B386] text-slate-950 border-[#00D09C]'
+                  : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-700'
+              }`}
+            >
+              <span>
+                {authSession ? `${authSession.maskedPhone} • ${authSession.rbacRole}` : '/login (Phone & OTP)'}
+              </span>
+            </button>
+
+            <button
               onClick={handleSyncMarketNow}
               disabled={isSyncingMarket}
               title="Fetch latest real-time NSE/BSE/AMFI prices from exchange feed"
@@ -1119,7 +1197,10 @@ export const App: React.FC = () => {
               return (
                 <button
                   key={meta.symbol}
-                  onClick={() => setSelectedSymbol(meta.symbol)}
+                  onClick={() => {
+                    setSelectedSymbol(meta.symbol);
+                    navigateToTab('TERMINAL');
+                  }}
                   className={`w-full text-left px-3.5 py-2.5 transition flex items-center justify-between gap-2 cursor-pointer border-l-4 ${
                     isSelected
                       ? isUp
@@ -1184,32 +1265,33 @@ export const App: React.FC = () => {
           </div>
         </aside>
 
-        {/* CENTER COLUMN (6 COLS): NAVIGATION TABS + CHART / HOLDINGS / 3-IN-1 BANK / BROKER IMPORT */}
+        {/* CENTER COLUMN (6 COLS): NAVIGATION ROUTES + LOGIN / PORTFOLIO / TERMINAL / RAG COPILOT */}
         <main className="lg:col-span-6 flex flex-col bg-[#070B12] min-h-[calc(100vh-88px)]">
-          {/* Primary Navigation Bar */}
+          {/* Multi-Route Navigation Bar (Main Route: /portfolio) */}
           <div className="bg-[#0B111E] border-b border-slate-800 px-4 flex items-center gap-1 overflow-x-auto">
             {(
               [
-                ['TERMINAL', 'Live Chart & OHLC', Activity],
                 [
                   'HOLDINGS_AND_LOTS',
-                  `Portfolio Holdings (${livePortfolio?.holdings.length ?? 0})`,
+                  `Portfolio (${livePortfolio?.holdings.length ?? 0})`,
+                  '/portfolio',
                   Layers,
                 ],
-                ['BANK_AND_FUNDS', '3-in-1 Bank & Demat Funds', Landmark],
-                ['BROKER_IMPORT', 'Import External Broker (RBAC)', FolderInput],
-                ['TAX_AND_CONTRACT_NOTE', 'SEBI Contract Note & Tax', ShieldAlert],
-                ['MARKET_NEWS', `Stock & Commodity News (${news.length})`, Flame],
-                ['AI_COPILOT', 'Gemini 3.8 Flash Risk Copilot', Sparkles],
-                ['ALERTS_AND_ORDERS', `Order Book & Alerts (${alerts.length})`, Bell],
-              ] as Array<[ActiveTab, string, React.ComponentType<{ className?: string }>]>
-            ).map(([tabId, label, Icon]) => {
-              const active = activeTab === tabId;
+                ['TERMINAL', 'Stocks & Charts', '/terminal', Activity],
+                ['BANK_AND_FUNDS', '3-in-1 Bank & UPI', '/funds', Landmark],
+                ['BROKER_IMPORT', 'Broker Import', '/import', FolderInput],
+                ['TAX_AND_CONTRACT_NOTE', 'SEBI Tax & Note', '/tax', ShieldAlert],
+                ['MARKET_NEWS', `Market News (${news.length})`, '/news', Flame],
+                ['AI_COPILOT', 'RAG Risk Copilot', '/copilot', Sparkles],
+                ['ALERTS_AND_ORDERS', `Orders & Alerts (${alerts.length})`, '/orders', Bell],
+              ] as Array<[ActiveTab, string, string, React.ComponentType<{ className?: string }>]>
+            ).map(([tabId, label, routePath, Icon]) => {
+              const active = !isLoginRoute && activeTab === tabId;
               return (
                 <button
                   key={tabId}
-                  onClick={() => setActiveTab(tabId)}
-                  className={`flex items-center gap-1.5 px-3.5 py-3 text-xs font-bold border-b-2 whitespace-nowrap transition cursor-pointer ${
+                  onClick={() => navigateToTab(tabId)}
+                  className={`flex items-center gap-1.5 px-3 py-3 text-xs font-semibold border-b-2 whitespace-nowrap transition cursor-pointer ${
                     active
                       ? 'border-[#00D09C] text-[#00D09C] bg-emerald-950/30'
                       : 'border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/60'
@@ -1217,12 +1299,29 @@ export const App: React.FC = () => {
                 >
                   <Icon className="w-3.5 h-3.5" />
                   <span>{label}</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800/80 text-slate-400">
+                    {routePath}
+                  </span>
                 </button>
               );
             })}
           </div>
 
-          <div key={activeTab} className="p-4 space-y-4 flex-1 agy-panel-enter">
+          <div
+            key={isLoginRoute ? 'LOGIN' : activeTab}
+            className="p-4 space-y-4 flex-1 agy-panel-enter"
+          >
+            {isLoginRoute ? (
+              <PhoneOtpLoginView
+                onLoginSuccess={(sess) => {
+                  setAuthSession(sess);
+                  setRbacRole(sess.rbacRole);
+                  navigateToTab('HOLDINGS_AND_LOTS');
+                }}
+                onSkipToPortfolio={() => navigateToTab('HOLDINGS_AND_LOTS')}
+              />
+            ) : (
+              <>
             {/* ================= TAB 1: LIVE TERMINAL & REAL-TIME OHLC CHART ================= */}
             {activeTab === 'TERMINAL' && activeMeta && (
               <>
@@ -1370,7 +1469,7 @@ export const App: React.FC = () => {
 
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setActiveTab('BROKER_IMPORT')}
+                      onClick={() => navigateToTab('BROKER_IMPORT')}
                       className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer flex items-center gap-1"
                     >
                       <Plus className="w-3.5 h-3.5" /> Authenticated Broker Import
@@ -1437,7 +1536,7 @@ export const App: React.FC = () => {
                                     <button
                                       onClick={() => {
                                         setSelectedSymbol(h.symbol);
-                                        setActiveTab('TERMINAL');
+                                        navigateToTab('TERMINAL');
                                       }}
                                       className="font-bold text-white hover:text-[#00D09C] cursor-pointer"
                                     >
@@ -1519,7 +1618,7 @@ export const App: React.FC = () => {
                   portfolio={livePortfolio}
                   onSelectSymbol={(sym) => {
                     setSelectedSymbol(sym);
-                    setActiveTab('TERMINAL');
+                    navigateToTab('TERMINAL');
                   }}
                 />
               </div>
@@ -1800,7 +1899,7 @@ export const App: React.FC = () => {
                   <div className="p-3 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-xs font-medium text-emerald-200 flex items-center justify-between gap-2">
                     <span>{importBanner}</span>
                     <button
-                      onClick={() => setActiveTab('HOLDINGS_AND_LOTS')}
+                      onClick={() => navigateToTab('HOLDINGS_AND_LOTS')}
                       className="px-2.5 py-1 rounded bg-[#059669] text-white font-semibold cursor-pointer shrink-0"
                     >
                       View Holdings →
@@ -2173,7 +2272,7 @@ export const App: React.FC = () => {
                           <button
                             onClick={() => {
                               setSelectedSymbol(item.symbol);
-                              setActiveTab('TERMINAL');
+                              navigateToTab('TERMINAL');
                             }}
                             className={`px-3 py-1 rounded-lg text-xs font-semibold text-white cursor-pointer ${
                               isBull
@@ -2296,6 +2395,85 @@ export const App: React.FC = () => {
                           </div>
                         ))}
                       </div>
+
+                      {/* Inspectable Local SQLite RAG Retrieval Chunks */}
+                      {aiAnalysis.ragChunksUsed && aiAnalysis.ragChunksUsed.length > 0 && (
+                        <div className="bg-[#070B12] rounded-xl border border-slate-800 p-3.5 space-y-2">
+                          <div className="flex items-center justify-between text-xs font-semibold text-slate-200">
+                            <span>
+                              4-Stage Local SQLite RAG Context Retrieval ({aiAnalysis.ragChunksUsed.length} chunks grounded)
+                            </span>
+                            <span className="text-[11px] text-[#00D09C]">Zero Hallucination Lock</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                            {aiAnalysis.ragChunksUsed.map((chunk) => (
+                              <div
+                                key={chunk.chunkId}
+                                className="p-2.5 rounded-lg bg-[#0D1421] border border-slate-800 space-y-1"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-semibold text-white">{chunk.title}</span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/70 text-[#00D09C] border border-emerald-500/30">
+                                    Match {(chunk.similarityScore * 100).toFixed(0)}%
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-amber-300/90">
+                                  {chunk.chunkId} • Source: {chunk.sourceTable}
+                                </div>
+                                <p className="text-[11px] text-slate-400 leading-relaxed">
+                                  {chunk.content}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Human-in-the-Loop Copilot Trade Staging */}
+                      {aiAnalysis.proposedActions && aiAnalysis.proposedActions.length > 0 && (
+                        <div className="bg-[#070B12] rounded-xl border border-slate-800 p-3.5 space-y-2">
+                          <div className="flex items-center justify-between text-xs font-semibold text-slate-200">
+                            <span>Human-in-the-Loop Rebalance Proposals</span>
+                            <span className="text-[11px] text-slate-400">
+                              Staged for your manual approval (never auto-executed)
+                            </span>
+                          </div>
+                          <div className="divide-y divide-slate-800 text-xs">
+                            {aiAnalysis.proposedActions.map((act, idx) => (
+                              <div
+                                key={`${act.symbol}-${idx}`}
+                                className="py-2 flex flex-wrap items-center justify-between gap-2"
+                              >
+                                <div>
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold mr-2 ${
+                                      act.side === 'BUY'
+                                        ? 'bg-emerald-950 text-[#00D09C] border border-emerald-500/30'
+                                        : 'bg-rose-950 text-[#FB7185] border border-rose-500/30'
+                                    }`}
+                                  >
+                                    {act.side} {act.quantity}
+                                  </span>
+                                  <span className="font-semibold text-white">{act.symbol}</span>
+                                  <span className="text-slate-400 ml-2">{act.rationale}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedSymbol(act.symbol);
+                                    setOrderSide(act.side);
+                                    setOrderQty(String(act.quantity));
+                                    navigateToTab('TERMINAL');
+                                  }}
+                                  className="px-2.5 py-1 rounded text-[11px] font-semibold bg-[#111A2B] text-[#00D09C] border border-emerald-500/30 hover:bg-slate-800 cursor-pointer"
+                                >
+                                  Stage in Order Ticket →
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2306,7 +2484,7 @@ export const App: React.FC = () => {
                       portfolio={livePortfolio}
                       onSelectSymbol={(sym) => {
                         setSelectedSymbol(sym);
-                        setActiveTab('TERMINAL');
+                        navigateToTab('TERMINAL');
                       }}
                     />
                     <StepUpSipAndCsvPanel portfolio={livePortfolio} taxReport={taxReport} />
@@ -2415,6 +2593,8 @@ export const App: React.FC = () => {
                   </div>
                 </div>
               </div>
+            )}
+              </>
             )}
           </div>
         </main>

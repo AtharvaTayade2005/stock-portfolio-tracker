@@ -284,6 +284,21 @@ export interface StressScenarioImpact {
   explanation: string;
 }
 
+export interface RagContextChunk {
+  chunkId: string;
+  sourceTable: string;
+  title: string;
+  similarityScore: number;
+  content: string;
+}
+
+export interface CopilotProposedAction {
+  symbol: string;
+  side: OrderSide;
+  quantity: number;
+  rationale: string;
+}
+
 export interface AiCopilotAnalysis {
   engineMode: 'GEMINI_LIVE' | 'DETERMINISTIC_QUANT_FALLBACK';
   modelUsed: string;
@@ -301,6 +316,8 @@ export interface AiCopilotAnalysis {
   stressTestScenarios: StressScenarioImpact[];
   actionableRebalancing: string[];
   queryAnswer?: string;
+  ragChunksUsed?: RagContextChunk[];
+  proposedActions?: CopilotProposedAction[];
 }
 
 export type WsServerMessage =

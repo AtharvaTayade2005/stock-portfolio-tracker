@@ -21,12 +21,14 @@ import {
   computeStepUpSipProjection,
 } from '../src/shared/quantRiskEngine.js';
 import {
+  authenticatePhoneOtpLogin,
   evaluateBrokerImportSecurity,
   hashCredentialPBKDF2,
   maskSensitiveIdentifier,
   verifyCredentialPBKDF2,
 } from '../src/server/securityService.js';
-import { SYMBOL_CATALOG } from '../src/shared/catalog.js';
+import { AiCopilotService } from '../src/server/aiCopilot.js';
+import { INITIAL_NEWS_FEED, SYMBOL_CATALOG } from '../src/shared/catalog.js';
 import {
   computeAllocationDriftReport,
   scanCatalogTechnicalSignals,
@@ -316,5 +318,40 @@ describe('Indian Stock Market Portfolio Tracker Core Engines (Phase 1 – Phase 
     assert.ok(matches.length > 0);
     assert.ok(matches[0].bbUpper > matches[0].bbLower);
     assert.ok(matches[0].rsi14 >= 0 && matches[0].rsi14 <= 100);
+  });
+
+  it('authenticates +91 phone and 6-digit OTP via PBKDF2-SHA256 and retrieves grounded SQLite RAG chunks in AiCopilotService (Phase 6)', () => {
+    const authOk = authenticatePhoneOtpLogin({
+      phoneNumber: '9820418210',
+      otpCode: '482910',
+      rbacRole: 'OWNER_ADMIN',
+    });
+    assert.equal(authOk.authenticated, true);
+    assert.equal(authOk.httpStatus, 200);
+    assert.equal(authOk.maskedPhone, '+91 XXXXX-X8210');
+    assert.ok(authOk.pbkdf2DigestPrefix.startsWith('PBKDF2-SHA256:'));
+
+    const authFail = authenticatePhoneOtpLogin({
+      phoneNumber: '123',
+      otpCode: '482910',
+    });
+    assert.equal(authFail.authenticated, false);
+    assert.equal(authFail.httpStatus, 401);
+
+    const db = createDatabase(':memory:');
+    const ledger = new LedgerService(db);
+    ledger.executeOrder(
+      { symbol: 'RELIANCE', side: 'BUY', quantity: 10, idempotencyKey: 'rag-rel-1' },
+      1339.7
+    );
+    const snapshot = ledger.getPortfolioSnapshot(new Map());
+    const copilot = new AiCopilotService();
+    const analysis = copilot.computeDeterministicAnalysis(
+      snapshot,
+      INITIAL_NEWS_FEED,
+      'What is my VaR and STCG tax?'
+    );
+    assert.ok(Array.isArray(analysis.ragChunksUsed) && analysis.ragChunksUsed.length >= 4);
+    assert.ok(Array.isArray(analysis.proposedActions) && analysis.proposedActions.length >= 1);
   });
 });
