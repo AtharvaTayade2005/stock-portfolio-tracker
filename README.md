@@ -1,82 +1,67 @@
-# KINETIC // Real-Time Stock Portfolio Tracker & Quant Terminal
+# KitePulse — Real-Time Indian Stock Market, MCX Commodities & Multi-Broker Portfolio Tracker
 
-An end-to-end TypeScript financial portfolio tracker and paper-trading terminal engineered with **zero black-box wrapper frameworks**. Designed to demonstrate real-time WebSocket fan-out networking, ACID double-entry/FIFO tax-lot accounting, off-main-thread Web Worker technical analysis, $O(1)$ stream alert evaluation, and structured-JSON AI portfolio risk analysis.
+An end-to-end TypeScript financial portfolio tracker, 3-in-1 bank/Demat ledger, and quantitative risk terminal engineered with **zero black-box wrapper frameworks**. Built for real-time NSE/BSE/MCX/AMFI market tracking, ACID FIFO tax-lot accounting, RBAC + CDSL TPIN external broker imports with outbound webhook notifications, off-main-thread Web Worker technical indicators, SEBI statutory contract notes, and parametric Value at Risk (VaR) analytics.
 
 ---
 
-## 1. System Architecture
+## 1. System Architecture (Phases 1 – 4)
 
 ```mermaid
 flowchart LR
-    subgraph MarketSources["Market Sources"]
-        FH["Finnhub Live WS\n(US Equities)"]
-        RP["Deterministic GBM Replay\n(1x / 5x / 10x Speed)"]
+    subgraph Feeds["Live Indian Market Feeds"]
+        YF["Yahoo Finance India\n(.NS / .BO / ^NSEI / ^BSESN)"]
+        AMFI["AMFI India Mutual Funds\n(api.mfapi.in Direct NAVs)"]
+        NEWS["Google News India RSS\n(Equities & Gold/Silver)"]
     end
 
-    subgraph Backend["Node.js 24 + TypeScript Server (Port 4000)"]
-        ME["MarketEngine\n(Circular Candle Buffer)"]
+    subgraph Backend["Node.js 24 + SQLite WAL Server (Port 4000)"]
+        ME["MarketEngine\n(09:15–15:30 IST Session + 5m OHLCV)"]
+        LS["LedgerService\n(BEGIN IMMEDIATE FIFO + 3-in-1 Bank ASBA)"]
+        RBAC["RBAC & CDSL TPIN Gate\n+ Outbound Broker Webhook Ack"]
         AE["AlertEngine\n(O(1) Symbol Hash Bucket)"]
-        LS["LedgerService\n(SQLite WAL + BEGIN IMMEDIATE)"]
-        AI["AiCopilotService\n(@google/genai Gemini 3.8 Flash)"]
-        WSH["WebSocket Fan-Out Hub (/ws)"]
+        AI["AiCopilotService\n(Gemini 3.8 Flash + Quant Fallback)"]
+        WSH["WebSocket Multiplexer (/ws)"]
     end
 
-    subgraph Browser["React 19 + TypeScript Client (Port 5173)"]
-        RAF["requestAnimationFrame\n60fps Tick Batcher"]
-        WW["Dedicated Web Worker\n(SMA, EMA, Wilder RSI, Bollinger)"]
-        UI["HTML5 HiDPI Candlestick Canvas\n& FIFO Portfolio Table"]
+    subgraph Client["React 19 Obsidian Dark Terminal (Port 5173)"]
+        WW["Dedicated Web Worker\n(O(N) SMA, EMA, Wilder RSI, Bollinger)"]
+        CV["HTML5 HiDPI Candlestick Canvas\n+ 5-Level L2 Market Depth"]
+        QRE["Quant Risk & Tax Engines\n(95%/99% VaR, Sharpe, Sortino, SEBI STT/GST)"]
     end
 
-    FH --> ME
-    RP --> ME
-    ME --> AE
-    ME --> WSH
-    AE --> WSH
-    WSH --> RAF
-    RAF --> UI
-    RAF --> WW
-    WW --> UI
-    LS <--> UI
-    AI <--> UI
+    Feeds --> ME
+    ME --> AE & WSH
+    WSH <--> Client
+    Client <--> LS & RBAC & AI
+    LS & RBAC --> QRE
 ```
 
 ---
 
-## 2. Core Engineering Pillars
+## 2. Core Engineering Pillars Across All 4 Phases
 
-| Pillar | Implementation File | Key Engineering Concept |
+| Phase | Module | Key Engineering Implementation |
 | :--- | :--- | :--- |
-| **1. WebSocket Fan-Out & Market Replay** | [`src/server/marketEngine.ts`](src/server/marketEngine.ts) | Single upstream Finnhub WebSocket connection + Mulberry32/Box-Muller Geometric Brownian Motion replay engine (`1x`, `5x`, `10x` speed) so live ticks stream 24/7 including weekends. |
-| **2. ACID Paper Trading & FIFO Ledger** | [`src/server/ledgerService.ts`](src/server/ledgerService.ts) | Native `node:sqlite` in `WAL` mode using `BEGIN IMMEDIATE` write-locked transactions, `idempotency_key` deduplication, and strict chronological FIFO (`ORDER BY acquired_at ASC, id ASC`) tax-lot consumption. |
-| **3. Off-Main-Thread Technical Indicators** | [`src/shared/indicators.ts`](src/shared/indicators.ts) & [`src/client/workers/indicators.worker.ts`](src/client/workers/indicators.worker.ts) | $O(N)$ sliding-window **SMA (20/50)**, **EMA (12/26)**, **14-Period Wilder's RSI**, and **Bollinger Bands (20, 2σ)** computed inside a browser Web Worker + `requestAnimationFrame` UI batching. |
-| **4. $O(1)$ Real-Time Price Alert Engine** | [`src/server/alertEngine.ts`](src/server/alertEngine.ts) | Symbol-keyed in-memory `Map<string, PriceAlert[]>` evaluates every incoming tick in $O(1)$ lookup time without polling the database. |
-| **5. Direct Gemini AI Risk Copilot** | [`src/server/aiCopilot.ts`](src/server/aiCopilot.ts) | Uses `@google/genai` (`gemini-3.8-flash`) with strict JSON schema output grounded in FIFO ledger weights and asset betas, paired with a deterministic quantitative fallback engine. |
+| **Phase 1: Core ACID Ledger & Indicators** | [`src/server/db.ts`](src/server/db.ts), [`src/server/ledgerService.ts`](src/server/ledgerService.ts), [`src/shared/indicators.ts`](src/shared/indicators.ts) | Native `node:sqlite` in `WAL` mode (`BEGIN IMMEDIATE`), `UNIQUE` idempotency keys, $O(K)$ chronological FIFO tax-lot consumption, $O(1)$ hash-bucket price alerts, and $O(N)$ SMA/EMA/Wilder RSI(14)/Bollinger Bands inside a browser Web Worker. |
+| **Phase 2: Live NSE/BSE/AMFI & 3-in-1 Bank Rail** | [`src/server/marketEngine.ts`](src/server/marketEngine.ts), [`src/shared/catalog.ts`](src/shared/catalog.ts) | Live Yahoo Finance India (`.NS`/`.BO`) & AMFI (`api.mfapi.in`) quote + 5m OHLCV sync, `09:15–15:30 IST` market session engine, universal NSE/BSE symbol lookup, and atomic double-entry 3-in-1 Bank ↔ Demat UPI/IMPS/ASBA transfers (`SBI`, `HDFC`, `ICICI`). |
+| **Phase 3: SEBI Contract Note, Tax Harvesting & Commodities** | [`src/shared/indianTaxAndCharges.ts`](src/shared/indianTaxAndCharges.ts) | MCX Gold/Silver & commodity equities (`GOLDBEES`, `SILVERBEES`, `MCX GOLD 10G`, `MCX SILVER 1KG`, `TITAN`, `VEDL`, `HINDALCO`, `TATASTEEL`), exact SEBI statutory contract note (`STT/CTT`, `Exchange Turnover`, `SEBI Fee`, `Stamp Duty`, `18% GST`, `CDSL DP ₹15.93`), Section 111A STCG (20%) / Section 112A LTCG (12.5%) tax-loss harvesting, 5-level L2 Market Depth ladder, and live market news feed. |
+| **Phase 4: Obsidian Dark UI, RBAC Broker Import & Quant VaR** | [`src/shared/quantRiskEngine.ts`](src/shared/quantRiskEngine.ts), [`src/server/index.ts`](src/server/index.ts), [`src/client/App.tsx`](src/client/App.tsx) | High-contrast Obsidian Dark Mode (`#070B12` / `#0D1421`) with natural `Inter` (`tabular-nums`) typography, zero-preset raw data lock, RBAC (`OWNER_ADMIN`, `PORTFOLIO_IMPORTER`, `AUDITOR_READ_ONLY`) + CDSL 16-digit BOID/TPIN/OTP broker import verification with outbound broker webhook notifications (`BROKER_NOTIFIED_200_OK`), and Parametric 95%/99% 1-Day & 10-Day Basel III VaR, Sharpe Ratio, Sortino Ratio, and HHI Concentration metrics. |
 
 ---
 
-## 3. Environment Variables
-
-Copy `.env.example` to `.env` (optional—the application runs out-of-the-box with zero API keys using the built-in Deterministic Market Replay & Quant Stress-Test engines):
-
-| Variable | Required | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `PORT` | No | `4000` | Backend HTTP & WebSocket server port |
-| `FINNHUB_API_KEY` | No | *(Empty)* | Optional Finnhub API key for live US market trade WebSockets |
-| `GEMINI_API_KEY` | No | *(Empty)* | Optional Google Gemini API key for live `gemini-3.8-flash` risk synthesis |
-| `SQLITE_DB_PATH` | No | `./data/portfolio.sqlite` | Path to local SQLite WAL database file |
-
----
-
-## 4. Quick Start & Verification
+## 3. Quick Start & Verification
 
 ```bash
 # 1. Install dependencies
 npm install
 
-# 2. Run automated unit & integration tests (FIFO ledger, idempotency, RSI/BB math, O(1) alerts)
+# 2. Run all 8 automated unit & integration tests (Phase 1 – Phase 4)
 npm test
 
-# 3. Start the Backend Server (Port 4000) and Vite React Client (Port 5173)
+# 3. Verify production TypeScript & Vite bundle
+npm run build
+
+# 4. Start the Backend Server (Port 4000) and Vite React Client (Port 5173)
 npm run dev:server
 npm run dev:client
 ```
