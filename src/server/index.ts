@@ -5,10 +5,15 @@ import { INITIAL_NEWS_FEED, SYMBOL_CATALOG, SYMBOL_MAP } from '../shared/catalog
 import type {
   AlertDirection,
   ExternalHoldingImportItem,
+  OhlcvCandle,
   OrderRequest,
   ReplaySpeed,
   WsServerMessage,
 } from '../shared/types.js';
+import {
+  computeAllocationDriftReport,
+  scanCatalogTechnicalSignals,
+} from '../shared/rebalanceAndScannerEngine.js';
 import { createDatabase } from './db.js';
 import { LedgerService } from './ledgerService.js';
 import { AlertEngine } from './alertEngine.js';
@@ -293,6 +298,28 @@ const server = http.createServer(async (req, res) => {
       const snapshot = ledgerService.getPortfolioSnapshot(marketEngine.getLatestTicksMap());
       const analysis = await aiCopilot.analyzePortfolio(snapshot, INITIAL_NEWS_FEED, body.question);
       sendJson(res, 200, analysis);
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/scanner') {
+      const threshold = Number(parsedUrl.searchParams.get('threshold') || 5);
+      const candlesRecord: Record<string, OhlcvCandle[]> = {};
+      for (const s of SYMBOL_CATALOG) {
+        candlesRecord[s.symbol] = marketEngine.getCandles(s.symbol);
+      }
+      const signals = scanCatalogTechnicalSignals(
+        SYMBOL_CATALOG,
+        candlesRecord,
+        marketEngine.getLatestTicksMap()
+      );
+      const snapshot = ledgerService.getPortfolioSnapshot(marketEngine.getLatestTicksMap());
+      const driftReport = computeAllocationDriftReport(snapshot, undefined, threshold);
+      sendJson(res, 200, {
+        signals,
+        driftReport,
+        scannedCount: SYMBOL_CATALOG.length,
+        timestamp: new Date().toISOString(),
+      });
       return;
     }
 

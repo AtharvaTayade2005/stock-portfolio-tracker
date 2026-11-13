@@ -26,6 +26,12 @@ import {
   maskSensitiveIdentifier,
   verifyCredentialPBKDF2,
 } from '../src/server/securityService.js';
+import { SYMBOL_CATALOG } from '../src/shared/catalog.js';
+import {
+  computeAllocationDriftReport,
+  scanCatalogTechnicalSignals,
+} from '../src/shared/rebalanceAndScannerEngine.js';
+import type { OhlcvCandle } from '../src/shared/types.js';
 
 describe('Indian Stock Market Portfolio Tracker Core Engines (Phase 1 – Phase 5)', () => {
   it('starts portfolio with 0 pre-seeded holdings and 3 linked Indian bank accounts', () => {
@@ -281,5 +287,34 @@ describe('Indian Stock Market Portfolio Tracker Core Engines (Phase 1 – Phase 
     assert.ok(sip.finalCorpusINR > sip.totalInvestedINR);
     assert.ok(sip.totalWealthGainedINR > 0);
     assert.ok(sip.inflationAdjustedCorpusINR < sip.finalCorpusINR);
+  });
+
+  it('computes portfolio allocation drift against target threshold bands and runs vectorized technical scans (Phase 5+)', () => {
+    const db = createDatabase(':memory:');
+    const ledger = new LedgerService(db);
+    ledger.executeOrder(
+      { symbol: 'RELIANCE', side: 'BUY', quantity: 20, idempotencyKey: 'drift-rel-1' },
+      1339.7
+    );
+    const snapshot = ledger.getPortfolioSnapshot(new Map());
+    const drift = computeAllocationDriftReport(snapshot, undefined, 5);
+
+    const largeCap = drift.items.find((i) => i.segment === 'LARGE_CAP');
+    assert.ok(largeCap);
+    assert.equal(largeCap.currentWeightPercent, 100);
+    assert.equal(largeCap.targetWeightPercent, 50);
+    assert.equal(largeCap.driftPercent, 50);
+    assert.equal(largeCap.status, 'OVERWEIGHT_DRIFT');
+    assert.equal(drift.requiresRebalancing, true);
+
+    const engine = new MarketEngine();
+    const candlesRecord: Record<string, OhlcvCandle[]> = {};
+    for (const s of SYMBOL_CATALOG) {
+      candlesRecord[s.symbol] = engine.getCandles(s.symbol);
+    }
+    const matches = scanCatalogTechnicalSignals(SYMBOL_CATALOG, candlesRecord);
+    assert.ok(matches.length > 0);
+    assert.ok(matches[0].bbUpper > matches[0].bbLower);
+    assert.ok(matches[0].rsi14 >= 0 && matches[0].rsi14 <= 100);
   });
 });

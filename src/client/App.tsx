@@ -56,6 +56,7 @@ import {
 import { computeQuantRiskMetrics } from '../shared/quantRiskEngine.js';
 import { CandlestickChart } from './components/CandlestickChart.js';
 import { StepUpSipAndCsvPanel } from './components/StepUpSipAndCsvPanel.js';
+import { RebalanceAndScannerPanel } from './components/RebalanceAndScannerPanel.js';
 
 type ActiveTab =
   | 'TERMINAL'
@@ -1513,6 +1514,14 @@ export const App: React.FC = () => {
                     </div>
                   </div>
                 )}
+
+                <RebalanceAndScannerPanel
+                  portfolio={livePortfolio}
+                  onSelectSymbol={(sym) => {
+                    setSelectedSymbol(sym);
+                    setActiveTab('TERMINAL');
+                  }}
+                />
               </div>
             )}
 
@@ -2292,7 +2301,16 @@ export const App: React.FC = () => {
                 </div>
 
                 {livePortfolio && (
-                  <StepUpSipAndCsvPanel portfolio={livePortfolio} taxReport={taxReport} />
+                  <>
+                    <RebalanceAndScannerPanel
+                      portfolio={livePortfolio}
+                      onSelectSymbol={(sym) => {
+                        setSelectedSymbol(sym);
+                        setActiveTab('TERMINAL');
+                      }}
+                    />
+                    <StepUpSipAndCsvPanel portfolio={livePortfolio} taxReport={taxReport} />
+                  </>
                 )}
               </div>
             )}
