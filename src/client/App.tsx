@@ -1107,6 +1107,71 @@ export const App: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* ================= TOP WEBSITE NAVIGATION BAR (DEDICATED ROUTE BUTTONS) ================= */}
+        <nav
+          aria-label="Primary website routes"
+          className="bg-[#090F1A]/95 px-4 py-2 border-t border-slate-800/80 flex items-center gap-2 flex-wrap"
+        >
+          <span className="text-[11px] font-medium text-slate-400 mr-1 hidden sm:inline">
+            Navigate:
+          </span>
+          {(
+            [
+              ['HOLDINGS_AND_LOTS', 'Portfolio', '/portfolio', Layers],
+              ['TERMINAL', 'Stocks & Charts', '/terminal', Activity],
+              ['BANK_AND_FUNDS', '3-in-1 Bank & UPI', '/funds', Landmark],
+              ['BROKER_IMPORT', 'Broker Import', '/import', FolderInput],
+              ['TAX_AND_CONTRACT_NOTE', 'SEBI Tax & Note', '/tax', ShieldAlert],
+              ['MARKET_NEWS', 'Market News', '/news', Flame],
+              ['AI_COPILOT', 'RAG Risk Copilot', '/copilot', Sparkles],
+              ['ALERTS_AND_ORDERS', 'Orders & Alerts', '/orders', Bell],
+            ] as Array<[ActiveTab, string, string, React.ComponentType<{ className?: string }>]>
+          ).map(([tabId, label, routePath, Icon]) => {
+            const active = !isLoginRoute && activeTab === tabId;
+            return (
+              <button
+                key={tabId}
+                type="button"
+                onClick={() => navigateToTab(tabId)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                  active
+                    ? 'bg-[#00D09C] text-slate-950 font-semibold border-[#00D09C] shadow-sm'
+                    : 'bg-[#111A2B]/90 hover:bg-slate-800 text-slate-200 border-slate-700/80'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{label}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded ${
+                    active ? 'bg-slate-950/15 text-slate-900' : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  {routePath}
+                </span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={navigateToLogin}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ml-auto ${
+              isLoginRoute
+                ? 'bg-[#00D09C] text-slate-950 font-semibold border-[#00D09C] shadow-sm'
+                : 'bg-[#111A2B]/90 hover:bg-slate-800 text-slate-200 border-slate-700/80'
+            }`}
+          >
+            <CreditCard className="w-3.5 h-3.5" />
+            <span>Phone & OTP Login</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded ${
+                isLoginRoute ? 'bg-slate-950/15 text-slate-900' : 'bg-slate-800 text-slate-400'
+              }`}
+            >
+              /login
+            </span>
+          </button>
+        </nav>
       </header>
 
       {/* Alert Triggered Banner */}
@@ -1440,6 +1505,107 @@ export const App: React.FC = () => {
             {/* ================= TAB 2: HOLDINGS & FIFO TAX LOTS ================= */}
             {activeTab === 'HOLDINGS_AND_LOTS' && livePortfolio && (
               <div className="space-y-4">
+                <div className="bg-[#0D1421] rounded-xl border border-slate-800 p-4 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <h2 className="text-xs font-semibold text-slate-200">
+                      Quick Route Navigation
+                    </h2>
+                    <span className="text-[11px] text-slate-400">
+                      Jump directly to any page in your multi-route workspace
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => navigateToTab('TERMINAL')}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#111A2B] hover:bg-slate-800 border border-slate-700/80 text-xs font-medium text-slate-200 transition cursor-pointer"
+                    >
+                      <span className="flex items-center gap-1.5 truncate">
+                        <Activity className="w-3.5 h-3.5 text-[#00D09C] shrink-0" />
+                        <span className="truncate">Stocks & Charts</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">/terminal</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigateToTab('BANK_AND_FUNDS')}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#111A2B] hover:bg-slate-800 border border-slate-700/80 text-xs font-medium text-slate-200 transition cursor-pointer"
+                    >
+                      <span className="flex items-center gap-1.5 truncate">
+                        <Landmark className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <span className="truncate">3-in-1 Bank & UPI</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">/funds</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigateToTab('BROKER_IMPORT')}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#111A2B] hover:bg-slate-800 border border-slate-700/80 text-xs font-medium text-slate-200 transition cursor-pointer"
+                    >
+                      <span className="flex items-center gap-1.5 truncate">
+                        <FolderInput className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span className="truncate">Broker Import</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">/import</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigateToTab('TAX_AND_CONTRACT_NOTE')}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#111A2B] hover:bg-slate-800 border border-slate-700/80 text-xs font-medium text-slate-200 transition cursor-pointer"
+                    >
+                      <span className="flex items-center gap-1.5 truncate">
+                        <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        <span className="truncate">SEBI Tax & Note</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">/tax</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigateToTab('AI_COPILOT')}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#111A2B] hover:bg-slate-800 border border-slate-700/80 text-xs font-medium text-slate-200 transition cursor-pointer"
+                    >
+                      <span className="flex items-center gap-1.5 truncate">
+                        <Sparkles className="w-3.5 h-3.5 text-[#00D09C] shrink-0" />
+                        <span className="truncate">RAG Risk Copilot</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">/copilot</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigateToTab('MARKET_NEWS')}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#111A2B] hover:bg-slate-800 border border-slate-700/80 text-xs font-medium text-slate-200 transition cursor-pointer"
+                    >
+                      <span className="flex items-center gap-1.5 truncate">
+                        <Flame className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                        <span className="truncate">Market News</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">/news</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigateToTab('ALERTS_AND_ORDERS')}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#111A2B] hover:bg-slate-800 border border-slate-700/80 text-xs font-medium text-slate-200 transition cursor-pointer"
+                    >
+                      <span className="flex items-center gap-1.5 truncate">
+                        <Bell className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                        <span className="truncate">Orders & Alerts</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">/orders</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={navigateToLogin}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#111A2B] hover:bg-slate-800 border border-slate-700/80 text-xs font-medium text-slate-200 transition cursor-pointer"
+                    >
+                      <span className="flex items-center gap-1.5 truncate">
+                        <CreditCard className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                        <span className="truncate">Phone & OTP Login</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">/login</span>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="bg-[#0D1421] rounded-xl border border-slate-800 p-4 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-xs font-bold text-slate-300 mr-1">Broker Filter:</span>
