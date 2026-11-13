@@ -53,6 +53,7 @@ import {
   computeIndianCapitalGainsTax,
   generateMarketDepthLadder,
 } from '../shared/indianTaxAndCharges.js';
+import { computeQuantRiskMetrics } from '../shared/quantRiskEngine.js';
 import { CandlestickChart } from './components/CandlestickChart.js';
 
 type ActiveTab =
@@ -833,6 +834,11 @@ export const App: React.FC = () => {
   const marketDepth = useMemo(() => {
     return generateMarketDepthLadder(activeTick, activeMeta?.basePrice ?? 1000);
   }, [activeTick, activeMeta]);
+
+  const quantRisk = useMemo(() => {
+    if (!livePortfolio) return null;
+    return computeQuantRiskMetrics(livePortfolio);
+  }, [livePortfolio]);
 
   return (
     <div className="min-h-screen bg-[#070B12] text-slate-100 flex flex-col selection:bg-emerald-600 selection:text-white">
@@ -2168,9 +2174,50 @@ export const App: React.FC = () => {
               </div>
             )}
 
-            {/* ================= TAB 5: GEMINI 3.8 FLASH RISK COPILOT ================= */}
+            {/* ================= TAB 5: GEMINI 3.8 FLASH RISK COPILOT & QUANT VAR ENGINE ================= */}
             {activeTab === 'AI_COPILOT' && (
               <div className="space-y-4">
+                {quantRisk && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
+                    <div className="bg-[#0D1421] rounded-xl border border-slate-800 p-3.5">
+                      <div className="text-[11px] text-slate-400">1-Day 95% VaR</div>
+                      <div className="text-base font-bold text-[#FB7185] mt-1">
+                        {formatINR(quantRisk.var95DailyINR)}
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        10-Day VaR: {formatINR(quantRisk.var95TenDayINR)}
+                      </div>
+                    </div>
+                    <div className="bg-[#0D1421] rounded-xl border border-slate-800 p-3.5">
+                      <div className="text-[11px] text-slate-400">Sharpe Ratio (vs 6.8% G-Sec)</div>
+                      <div className="text-base font-bold text-[#00D09C] mt-1">
+                        {quantRisk.sharpeRatio.toFixed(2)}
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        Sortino: {quantRisk.sortinoRatio.toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="bg-[#0D1421] rounded-xl border border-slate-800 p-3.5">
+                      <div className="text-[11px] text-slate-400">Annualized Volatility</div>
+                      <div className="text-base font-bold text-amber-400 mt-1">
+                        {quantRisk.annualizedVolatilityPercent.toFixed(2)}%
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        Daily: {quantRisk.dailyVolatilityPercent.toFixed(2)}%
+                      </div>
+                    </div>
+                    <div className="bg-[#0D1421] rounded-xl border border-slate-800 p-3.5">
+                      <div className="text-[11px] text-slate-400">HHI Concentration</div>
+                      <div className="text-base font-bold text-white mt-1">
+                        {quantRisk.hhiConcentrationIndex}
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        Diversification: {quantRisk.diversificationScore}/100
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="bg-[#0D1421] rounded-xl border border-slate-800 p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">

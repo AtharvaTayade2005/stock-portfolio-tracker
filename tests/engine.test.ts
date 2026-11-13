@@ -16,8 +16,9 @@ import {
   computeIndianCapitalGainsTax,
   generateMarketDepthLadder,
 } from '../src/shared/indianTaxAndCharges.js';
+import { computeQuantRiskMetrics } from '../src/shared/quantRiskEngine.js';
 
-describe('Indian Stock Market Portfolio Tracker Core Engines (Phase 1 + Phase 2)', () => {
+describe('Indian Stock Market Portfolio Tracker Core Engines (Phase 1 – Phase 4)', () => {
   it('starts portfolio with 0 pre-seeded holdings and 3 linked Indian bank accounts', () => {
     const db = createDatabase(':memory:');
     const ledger = new LedgerService(db);
@@ -215,5 +216,25 @@ describe('Indian Stock Market Portfolio Tracker Core Engines (Phase 1 + Phase 2)
     const tax = computeIndianCapitalGainsTax([], 50000);
     assert.equal(tax.realizedStcgGross, 50000);
     assert.equal(tax.estimatedStcgTax, 10400);
+  });
+
+  it('computes Parametric 95%/99% VaR, 10-Day Basel VaR, Sharpe, Sortino, and HHI Concentration (Phase 4)', () => {
+    const db = createDatabase(':memory:');
+    const ledger = new LedgerService(db);
+    ledger.executeOrder(
+      { symbol: 'RELIANCE', side: 'BUY', quantity: 20, idempotencyKey: 'var-rel-1' },
+      1339.7
+    );
+    ledger.executeOrder(
+      { symbol: 'TCS', side: 'BUY', quantity: 10, idempotencyKey: 'var-tcs-1' },
+      2441.5
+    );
+    const snapshot = ledger.getPortfolioSnapshot(new Map());
+    const risk = computeQuantRiskMetrics(snapshot);
+
+    assert.ok(risk.var95DailyINR > 0);
+    assert.ok(risk.var99DailyINR > risk.var95DailyINR);
+    assert.ok(risk.var95TenDayINR > risk.var95DailyINR);
+    assert.ok(risk.hhiConcentrationIndex > 0 && risk.hhiConcentrationIndex <= 10000);
   });
 });
